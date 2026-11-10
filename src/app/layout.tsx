@@ -11,7 +11,7 @@ const telugu = localFont({ src: "./fonts/noto-sans-telugu.woff2", weight: "100 9
 
 export const metadata: Metadata = {
   title: { default: "Jugaad One | Say it. Find it. Pay for it.", template: "%s | Jugaad One" },
-  description: "Explore a voice-first workspace for comparing fictional providers and reviewing sandbox transactions.",
+  description: "Compare offers, review quotes and track simulated orders in one voice-first workspace.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { commerceSession, deleteProfile, readSession, sessionResponse, updateSession } from "@/lib/commerce/session";
-import { bookCommerce, commerceSpeech, trackingSpeech } from "@/lib/commerce/booking";
+import { bookCommerce, commerceSpeech, trackingSpeech, welcomeOfferSpeech } from "@/lib/commerce/booking";
 import { commerceAction, regionSchema } from "@/lib/commerce/types";
 import { matchGpsToDemoCity } from "@/lib/marketplace/demo-cities";
 import { locationSchema } from "@/lib/marketplace/discovery-types";
@@ -58,13 +58,16 @@ export async function POST(request: NextRequest) {
     const { input, language } = parsed.data;
     const { session, order } = await bookCommerce(owner, input);
     const { offers, quote, orders } = session;
-    const speech = input.action === "status" ? trackingSpeech(language, orders[0]) : commerceSpeech(language, quote, order);
+    const welcome = input.action === "select" || input.action === "customize" ? welcomeOfferSpeech(language, quote) : undefined;
+    const speech = welcome ?? (input.action === "status" ? trackingSpeech(language, orders[0]) : commerceSpeech(language, quote, order));
     const speechTicket = speech ? issueSpeechTicket(speech, language) : undefined;
     if (speech && input.action !== "status") {
       await updateSession(owner, (latest) => {
+        if (latest.searchId !== session.searchId || latest.quote?.id !== quote?.id) return latest;
         const dialogue = latest.dialogue ?? { previous: [] };
         const task = quote && dialogue.task ? { ...dialogue.task, selectedId: quote.offer.listing.id } : dialogue.task;
-        return { ...latest, dialogue: { ...dialogue, task, awaitingApproval: quote && !quote.approvedAt ? quote.id : undefined,
+        return { ...latest, dialogue: { ...dialogue, task, awaitingApproval: quote && !quote.approvedAt && !welcome ? quote.id : undefined,
+          confirmation: welcome && quote ? { type: "welcome_offer", id: quote.id } : undefined,
           last: { text: speech, language, ticket: speechTicket } } };
       });
     }

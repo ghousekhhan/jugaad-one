@@ -211,5 +211,11 @@ export async function searchFood(input: FoodSearch, signal?: AbortSignal, timing
     if (input.priority === "lowest-price") return total || preference || rating;
     return preference || rating || total;
   });
-  return { kind: "offers", offers, issues, excluded, more: input.page < 20 && pages.some((page) => page.status === "fulfilled" && page.value.more), simulated: true, evidence };
+  // Keep the best ranked offer from each provider visible before additional results.
+  const featured = providers.flatMap((provider) => {
+    const best = offers.find(({ item }) => item.provider.id === provider);
+    return best ? [best] : [];
+  }).sort((a, b) => offers.indexOf(a) - offers.indexOf(b));
+  const ranked = [...featured, ...offers.filter((offer) => !featured.includes(offer))];
+  return { kind: "offers", offers: ranked, issues, excluded, more: input.page < 20 && pages.some((page) => page.status === "fulfilled" && page.value.more), simulated: true, evidence };
 }

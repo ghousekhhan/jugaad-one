@@ -87,16 +87,17 @@ function ReviewSummary({ provider, branchId }: { provider: FoodProviderId; branc
   </div>;
 }
 
-function FoodOffer({ offer, onSelect }: { offer: QuotedOffer; onSelect: () => void }) {
+function FoodOffer({ offer, onSelect, featured = false }: { offer: QuotedOffer; onSelect: () => void; featured?: boolean }) {
   const { item, quote } = offer;
   return <li className="marketplace-result offer-card">
     <button className="approved-offer-select" type="button" onClick={onSelect} aria-label={`Review ${item.name} from ${item.restaurant.name} on ${item.provider.name}`}>
       <span className="offer-visual approved-provider-image"><Image src={marketplaceImage(item.image.url)} alt={item.image.alt} width={400} height={180} sizes="(max-width: 760px) 90vw, 30vw" /></span>
-      <span className="offer-provider">{item.provider.name} / {item.restaurant.name}</span>
+      <span className="offer-provider">{featured ? `Best from ${item.provider.name}` : item.provider.name} / {item.restaurant.name}</span>
       <span className="offer-name">{item.name}</span>
       <span className="offer-price-line"><strong className="offer-price">{formatPaise(quote.pricing.totalPaise)}</strong><span className="offer-eta">{quote.etaMinutes.min}–{quote.etaMinutes.max} min ↗</span></span>
     </button>
     <p className="meta">{quote.lineItems[0].quantity} × · {quote.distanceKm} km · {item.restaurant.rating.value.toFixed(1)} / 5 simulated rating</p>
+    {item.customization.length > 0 && <p className="meta">Options: {item.customization.map(({ name }) => name).join(", ")}</p>}
     <details><summary>Price breakdown</summary><QuoteFees quote={quote} /></details>
     <ReviewSummary provider={item.provider.id} branchId={item.restaurant.branchId} />
   </li>;
@@ -108,6 +109,9 @@ export function FoodDiscovery({ filters, onFilters, location, budget, radius, pr
   const key = JSON.stringify([filters, location, budget, radius, priority]);
   const local = state.kind !== "idle" && state.key === key && state.comparison === conversationComparison ? state : null;
   const visible = local ?? (conversationComparison ? { kind: "result" as const, ...conversationComparison } : null);
+  const offers = visible?.kind === "result" && visible.result.kind === "offers" ? visible.result.offers : [];
+  const featured = offers.filter((offer, index) => offers.findIndex(({ item }) => item.provider.id === offer.item.provider.id) === index);
+  const additional = offers.filter((offer) => !featured.includes(offer));
   useEffect(() => () => request.current?.abort(), [key]);
 
   async function runSearch(mode: FoodSearch["mode"] = filters.mode, branchId?: string, page = 0, previous?: FoodSearch) {
@@ -160,7 +164,7 @@ export function FoodDiscovery({ filters, onFilters, location, budget, radius, pr
       <div className="workspace-field"><label htmlFor="food-cuisine">Cuisine</label><input id="food-cuisine" maxLength={60} value={filters.cuisine} onChange={(event) => onFilters({ ...filters, cuisine: event.target.value })} placeholder="e.g. Biryani" /></div>
       <div className="workspace-field"><label htmlFor="food-dietary">Dietary preference</label><select id="food-dietary" value={filters.dietary} onChange={(event) => onFilters({ ...filters, dietary: event.target.value })}><option value="">Any</option><option value="vegetarian">Vegetarian</option><option value="vegan">Vegan</option><option value="gluten-free">Gluten-free</option><option value="halal">Halal</option></select></div>
       <div className="workspace-field"><label htmlFor="food-allergens">Exclude allergens</label><input id="food-allergens" maxLength={120} value={filters.allergens} onChange={(event) => onFilters({ ...filters, allergens: event.target.value })} placeholder="e.g. dairy, gluten" /></div>
-      <p className="workspace-help">Allergen tags describe fictional recipes. Use them for the sandbox only.</p>
+      <p className="workspace-help">Allergen tags describe fictional recipes.</p>
       <div className="workspace-field"><label htmlFor="food-rating">Minimum simulated rating (1–5)</label><input id="food-rating" type="number" min="1" max="5" step="0.1" value={filters.minRating} onChange={(event) => onFilters({ ...filters, minRating: event.target.value })} /></div>
     </details>
     <Button onClick={() => void runSearch()} disabled={visible?.kind === "loading"}>{visible?.kind === "loading" ? "Checking both providers…" : "Search food providers"}</Button>
@@ -181,8 +185,15 @@ export function FoodDiscovery({ filters, onFilters, location, budget, radius, pr
       </> : <>
         <h3>{visible.result.offers.length ? "Quoted offers" : "No eligible quotes on this page"}</h3>
         <p className="workspace-help">The totals include required options, fees and tax.</p>
-        {!visible.result.offers.length && visible.input.location.source === "gps" && <p className="workspace-help">If you’re outside the sandbox service area, try selecting one of the supported cities manually.</p>}
-        <ul className="marketplace-results">{visible.result.offers.map((offer) => <FoodOffer offer={offer} onSelect={() => onSelect({ offer, search: visible.input })} key={offer.quote.id} />)}</ul>
+        {!visible.result.offers.length && visible.input.location.source === "gps" && <p className="workspace-help">If you’re outside the service area, try selecting one of the supported cities manually.</p>}
+        {featured.length === 1 && visible.input.providerPreference?.mode !== "only" && visible.input.mode === "dish" &&
+          <p className="workspace-help">Only {featured[0].item.provider.name} has an eligible quote among the offers checked.</p>}
+        <ul className="marketplace-results provider-comparison">{featured.map((offer) =>
+          <FoodOffer offer={offer} featured onSelect={() => onSelect({ offer, search: visible.input })} key={offer.quote.id} />,
+        )}</ul>
+        {additional.length > 0 && <details><summary>More eligible offers</summary><ul className="marketplace-results">
+          {additional.map((offer) => <FoodOffer offer={offer} onSelect={() => onSelect({ offer, search: visible.input })} key={offer.quote.id} />)}
+        </ul></details>}
         {visible.result.excluded.length > 0 && <details><summary>Why offers were excluded</summary><ul className="marketplace-exclusions">{visible.result.excluded.map(({ provider, item, code }, index) => <li key={`${provider}-${item}-${index}`}>{foodProviderNames[provider]} · {item}: {exclusionMessages[code] ?? "Provider could not quote this offer"}.</li>)}</ul></details>}
       </>}
       <div className="marketplace-actions">

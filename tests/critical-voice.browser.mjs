@@ -46,7 +46,9 @@ try {
 
   await page.goto(base + "/workspace");
   await page.getByRole("heading", { name: /enable your microphone/i }).waitFor();
-  await page.getByRole("button", { name: "Start voice conversation" }).click();
+  await page.getByRole("button", { name: "Start Conversation" }).click();
+  await page.getByLabel("Service city").selectOption("hyderabad");
+  await page.getByRole("button", { name: "Confirm city" }).click();
   await page.getByText(/which language are you most comfortable/i).first().waitFor();
   const proposed = (language) => page.getByText(`You selected ${language}. Is that correct?`, { exact: true }).first();
   await say("Hinglish");
@@ -64,20 +66,18 @@ try {
   await page.getByText(/main Jugaad hoon/i).first().waitFor();
   await page.getByLabel("Your name", { exact: true }).fill("Voice QA");
   await page.getByRole("button", { name: /continue/i }).click();
-  await page.getByLabel("Sandbox service city").selectOption("hyderabad");
-  await page.getByRole("button", { name: /start with jugaad/i }).click();
   await page.getByRole("heading", { name: /good to have you here/i }).waitFor();
 
   const input = page.getByRole("textbox", { name: "Message Jugaad" });
   async function ask(text) {
     await input.fill(text);
-    const pending = page.waitForResponse((response) => response.url().endsWith("/api/agent/interpret"));
+    const pending = page.waitForResponse((response) => response.url().endsWith("/api/agent/interpret"), { timeout: 60000 });
     await page.getByRole("button", { name: "Send message" }).click();
     const response = await pending;
     assert.equal(response.status(), 200);
     return response.json();
   }
-  await page.getByRole("button", { name: "Start voice conversation" }).evaluate((node) => { window.originalMic = node; });
+  await page.getByRole("button", { name: "Start Conversation" }).evaluate((node) => { window.originalMic = node; });
   const initial = await ask("I want something sweet, maybe cake");
   assert.equal(initial.sandbox.offers.length, 3);
   assert.equal(initial.replyLanguage, "hi-en");
@@ -92,14 +92,14 @@ try {
       const bounds = await card.boundingBox();
       assert.ok(bounds && bounds.y >= 0 && bounds.y + bounds.height <= Math.min(height, results.y + results.height) + 1, JSON.stringify({ width, height, bounds, results }));
     }
-    const mic = await page.getByRole("button", { name: "Start voice conversation" }).boundingBox();
+    const mic = await page.getByRole("button", { name: "Start Conversation" }).boundingBox();
     const transcript = await page.locator(".conversation-panel").boundingBox();
     assert.ok(mic && mic.y + mic.height <= height);
     assert.ok(transcript && transcript.y + transcript.height <= height);
     assert.equal(await page.evaluate(() => document.scrollingElement.scrollHeight), height);
     await page.screenshot({ path: output + `/results-${width}x${height}.png` });
   }
-  assert.equal(await page.getByRole("button", { name: "Start voice conversation" }).evaluate((node) => node === window.originalMic), true);
+  assert.equal(await page.getByRole("button", { name: "Start Conversation" }).evaluate((node) => node === window.originalMic), true);
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390);
   await page.screenshot({ path: output + "/results-mobile.png", fullPage: true });
@@ -111,11 +111,15 @@ try {
   const selected = await ask("Yes");
   assert.equal(selected.sandbox.quote.offer.listing.seller, "Mirchi Moon");
   assert.equal(selected.trace.searchAttempted, false);
-  await ask("Correct");
-  const paid = await ask("Yes, proceed");
-  assert.equal(paid.sandbox.orders.length, 1);
-  assert.equal(paid.sandbox.orders[0].payment, "simulated_no_charge");
-  await ask("Yes, proceed");
+  const discount = await ask("Yes");
+  assert.equal(discount.sandbox.quote.welcomeOffer.status, "applied");
+  const approved = await ask("Correct");
+  assert.match(approved.paymentPath, /^\/payment\?/);
+  assert.equal(approved.sandbox.orders.length, 0);
+  await page.waitForURL("**/payment?**");
+  await page.getByRole("button", { name: /tap to autofill/i }).click();
+  await page.getByRole("button", { name: /authorize simulated payment/i }).click();
+  await page.getByRole("heading", { name: /payment successful/i }).waitFor();
   const saved = await page.evaluate(async () => (await fetch("/api/commerce")).json());
   assert.equal(saved.orders.length, 1);
   assert.equal(saved.profile.language, "hi-en");

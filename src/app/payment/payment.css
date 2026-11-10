@@ -1,0 +1,77 @@
+.pay-page {
+  min-height: 100dvh;
+  padding: clamp(16px, 4vw, 52px);
+  background: #f7f7f3;
+  color: #17191c;
+}
+.pay-frame { width: min(100%, 920px); margin-inline: auto; }
+.pay-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 18px; }
+.pay-header p, .pay-brand { margin: 0; }
+.pay-brand { font-size: clamp(26px, 4vw, 38px); letter-spacing: -.06em; font-weight: 750; }
+.pay-brand span { color: #b6411a; }
+.pay-header p + p { font-size: 14px; color: #615d58; }
+.pay-return { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; font-weight: 650; }
+.pay-notice { display: flex; gap: 8px; align-items: center; padding: 10px 14px; border: 1px solid #e7d4c2; background: #fff4e9; border-radius: 12px; font-size: 14px; }
+.pay-notice svg { flex: none; }
+.pay-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.pay-surface { padding: clamp(16px, 3vw, 32px); border: 1px solid #dfddd6; border-radius: 24px; background: white; box-shadow: 0 16px 48px #30200909; }
+.pay-surface h1 { line-height: 1.05; letter-spacing: -.045em; }
+.pay-caption { margin: 0; color: #635c54; font-size: 14px; font-weight: 650; }
+.pay-total { margin: 4px 0 16px; font-size: clamp(38px, 6vw, 68px); font-variant-numeric: tabular-nums; }
+.pay-parties { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0 0 16px; }
+.pay-parties dt { font-size: 13px; color: #635c54; }
+.pay-parties dd { margin: 2px 0 0; font-weight: 700; overflow-wrap: anywhere; }
+.pay-parties small { display: block; color: #635c54; font-weight: 500; font-size: 13px; }
+.pay-items { padding-left: 18px; margin: 6px 0 16px; }
+.pay-breakdown { margin: 0; }
+.pay-breakdown div { display: flex; gap: 12px; justify-content: space-between; padding: 5px 0; font-size: 14px; }
+.pay-breakdown dd { margin: 0; text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
+.pay-breakdown div:last-child { margin-top: 5px; padding-top: 10px; border-top: 1px solid #dfddd6; font-weight: 750; }
+.pay-id { margin-bottom: 0; color: #635c54; overflow-wrap: anywhere; font-size: 12px; }
+.pay-auth { text-align: center; }
+.pay-auth .jugaad-pay-scene { border: 0; box-shadow: none; margin: 0; padding: 0; background: transparent; }
+.pay-auth .jugaad-pay-scene__header, .pay-auth .jugaad-pay-disclaimer { display: none; }
+.pay-auth .jugaad-pay-scene__body { padding: 0; }
+.pay-auth .jugaad-keypad-grid { margin-block: 8px; gap: 6px; }
+.pay-auth .jugaad-keypad-btn { min-height: 44px; height: 48px; }
+.pay-auth .jugaad-keypad-btn:active { transform: scale(.96); }
+.pay-auth .jugaad-pay-dots { margin-block: 8px; }
+.pay-auth .jugaad-pay-actions { margin-top: 8px; }
+.pay-cancel { justify-content: center; }
+.pay-centered { display: grid; place-items: center; }
+.pay-centered .pay-surface { max-width: 460px; }
+.pay-outcome { display: grid; min-height: min(540px, 72dvh); justify-items: center; align-content: center; text-align: center; gap: 12px; }
+.pay-outcome h1, .pay-outcome p { margin: 0; }
+.pay-outcome h1 { font-size: clamp(30px, 5vw, 52px); }
+.pay-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+.pay-receipt { width: min(100%, 430px); text-align: left; }
+.pay-done { color: #315e4a; font-weight: 750; }
+.pay-spinner { width: 90px; height: 90px; margin-bottom: 12px; border: 5px solid #f1e4da; border-top-color: #b6411a; border-radius: 50%; animation: pay-spin 1s linear infinite; }
+.pay-confirmation-mark { margin-bottom: 8px; }
+.pay-confirmation-mark circle { fill: #e8f4eb; stroke: #287053; stroke-width: 2px; }
+.pay-confirmation-mark path { fill: none; stroke: #287053; stroke-width: 7px; stroke-linecap: round; stroke-linejoin: round; }
+.pay-confirmation-mark[data-animate="true"] { animation: pay-arrive .52s cubic-bezier(.18,1.42,.4,1) both; }
+.pay-confirmation-mark[data-animate="true"] path { stroke-dasharray: 1; animation: pay-tick .36s .18s ease-out both; }
+.pay-confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+@keyframes pay-spin { to { transform: rotate(360deg); } }
+@keyframes pay-arrive { from { opacity: 0; transform: scale(.55); } }
+@keyframes pay-tick { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@media (max-width: 700px) {
+  .pay-page { padding: 12px; }
+  .pay-header { margin-bottom: 8px; }
+  .pay-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .pay-auth { grid-row: 1; }
+  .pay-surface { border-radius: 16px; }
+  .pay-auth .jugaad-keypad-btn { height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pay-spinner, .pay-confirmation-mark[data-animate="true"], .pay-confirmation-mark[data-animate="true"] path { animation: none; }
+  .pay-confetti { display: none; }
+}
+
+.pay-mobile-summary { display: none; }
+@media (max-width: 700px) {
+  .pay-mobile-summary { display: grid; gap: 2px; margin-bottom: 10px; }
+  .pay-mobile-summary strong { font-size: 27px; font-variant-numeric: tabular-nums; }
+  .pay-mobile-summary span { font-size: 14px; overflow-wrap: anywhere; }
+}

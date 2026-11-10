@@ -164,3 +164,29 @@ test("sandbox reports budget and dietary misses without returning relaxed offers
   assert.equal(diet.turn.searchFailure, "FILTERED_BY_DIET");
   assert.deepEqual(diet.state.offers, []);
 });
+
+test("welcome offer is optional, replaces the quote and can only be used before the first simulated order", async () => {
+  const owner = "welcome-offer-test";
+  const [offer] = createOffers(clothing, "hyderabad");
+  await updateSession(owner, (state) => ({ ...state, current: clothing, offers: [offer] }));
+  const select = { action: "select", listingId: offer.listing.id } as const;
+  const initial = (await bookCommerce(owner, select)).session.quote!;
+  assert.equal(initial.offer.totalPaise, offer.totalPaise);
+  const declined = (await bookCommerce(owner, { action: "welcome_offer", quoteId: initial.id, accept: false })).session.quote!;
+  assert.equal(declined.offer.totalPaise, offer.totalPaise);
+  assert.equal(declined.welcomeOffer?.status, "declined");
+
+  const fresh = (await bookCommerce(owner, select)).session.quote!;
+  const accept = { action: "welcome_offer", quoteId: fresh.id, accept: true } as const;
+  const accepted = await Promise.allSettled([bookCommerce(owner, accept), bookCommerce(owner, accept)]);
+  assert.equal(accepted.filter(({ status }) => status === "fulfilled").length, 1);
+  const discounted = (await readSession(owner)).quote!;
+  const savings = Math.round(offer.listing.pricePaise * offer.quantity * 0.2);
+  assert.equal(discounted.offer.totalPaise, offer.totalPaise - savings);
+  await assert.rejects(bookCommerce(owner, { action: "approve", quoteId: fresh.id, totalPaise: offer.totalPaise }), { code: "TRANSACTION_NOT_FOUND" });
+  await assert.rejects(bookCommerce(owner, { action: "pay", quoteId: discounted.id, code: demoCode }), { code: "COMMERCE_APPROVAL_REQUIRED" });
+  await bookCommerce(owner, { action: "approve", quoteId: discounted.id, totalPaise: discounted.offer.totalPaise });
+  await bookCommerce(owner, { action: "pay", quoteId: discounted.id, code: demoCode });
+  await updateSession(owner, (state) => ({ ...state, offers: [offer] }));
+  assert.equal((await bookCommerce(owner, select)).session.quote?.welcomeOffer, undefined);
+});

@@ -110,7 +110,7 @@ export function OrdersHistoryModal({
 
         {/* Footer */}
         <div className="pt-2 border-t border-[#F0EBE2] flex items-center justify-between text-xs text-[#6F6B65]">
-          <span>All orders are simulated sandbox transactions.</span>
+          <span>All orders are simulated.</span>
           <button
             type="button"
             onClick={onClose}

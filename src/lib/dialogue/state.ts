@@ -13,7 +13,8 @@ export type Dialogue = {
   recommendation?: { id: string; criterion: "price" | "speed" | "rating" };
   lastLanguage?: VoiceLocale;
   awaitingApproval?: string;
-  confirmation?: { type: "offer"; id: string; taskId: string } | { type: "payment"; id: string; totalPaise: number };
+  confirmation?: { type: "offer"; id: string; taskId: string } | { type: "payment"; id: string; totalPaise: number } | { type: "welcome_offer"; id: string };
+  game?: { number: number };
   topic?: string;
   clarification?: string;
 };

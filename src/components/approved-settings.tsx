@@ -44,14 +44,14 @@ export function ApprovedProfile({ profile, onSave }: { profile: Profile; onSave:
           <div className="profile-identity-label">Your Jugaad profile</div><h2>{profile.name}</h2><p>A little context goes a long way.</p>
           <div className="profile-identity-line" />
           <div className="profile-meta"><span>Status</span><strong><span className="status-dot" /> Ready to explore</strong></div>
-          <div className="profile-meta"><span>Environment</span><strong>Simulated sandbox</strong></div>
+          <div className="profile-meta"><span>Environment</span><strong>Simulated transactions</strong></div>
         </div>
         <form className="profile-form" onSubmit={save}>
           <div className="form-section-head"><div><h2>Your preferences</h2><p>Saved to your Jugaad session.</p></div><span>01 — 03</span></div>
           <label htmlFor="profile-name">Preferred name</label><input id="profile-name" autoComplete="given-name" maxLength={40} required value={name} onChange={(event) => setName(event.target.value)} />
           <label htmlFor="profile-language">Conversation language</label><select id="profile-language" value={language} onChange={(event) => setLanguage(event.target.value as VoiceLocale)}>{Object.entries(voiceLanguages).map(([id, option]) => <option key={id} value={id}>{option.label}</option>)}</select>
-          <label htmlFor="profile-city">Sandbox service city</label><select id="profile-city" required value={region ?? ""} onChange={(event) => setRegion(event.target.value as Profile["region"])}>{Object.values(demoCities).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select>
-          <div className="form-bottom"><span>Changes affect future sandbox searches.</span><button className="btn btn-orange" disabled={pending} type="submit">{pending ? "Saving…" : "Save changes ↗"}</button></div>
+          <label htmlFor="profile-city">Service city</label><select id="profile-city" required value={region ?? ""} onChange={(event) => setRegion(event.target.value as Profile["region"])}>{Object.values(demoCities).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select>
+          <div className="form-bottom"><span>Your next search will use this city.</span><button className="btn btn-orange" disabled={pending} type="submit">{pending ? "Saving…" : "Save changes ↗"}</button></div>
           {notice && <p className={failed ? "field-error" : "workspace-help"} role={failed ? "alert" : "status"}>{notice}</p>}
         </form>
       </div>
@@ -89,8 +89,8 @@ export function ApprovedOrders({ orders, checkout, loading, error, active, onOpe
     <section className="tab-screen">
       <div className="screen-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> Your activity</div><h1>Every order,<br /><em>one place.</em></h1><p>A clear record of the transactions you’ve approved.</p></div><button className="outline-action" type="button" onClick={onBack}>↗ Back to Jugaad</button></div>
       <div className="orders-overview">
-        <div className="stat-card"><span>Simulated orders</span><strong>{String(confirmed.length).padStart(2, "0")}</strong><small>Confirmed sandbox orders</small></div>
-        <div className="stat-card"><span>Total sandbox spend</span><strong>{formatPaise(confirmed.reduce((sum, row) => sum + row.total, 0))}</strong><small>No real payments</small></div>
+        <div className="stat-card"><span>Simulated orders</span><strong>{String(confirmed.length).padStart(2, "0")}</strong><small>Confirmed orders</small></div>
+        <div className="stat-card"><span>Simulated order total</span><strong>{formatPaise(confirmed.reduce((sum, row) => sum + row.total, 0))}</strong><small>No real payments</small></div>
         <div className="stat-card stat-card-feature"><span>Your order history</span><div className="stat-glyph" aria-hidden="true">↗</div><small>Everything, in one place.</small></div>
       </div>
       <div className="orders-list-card">

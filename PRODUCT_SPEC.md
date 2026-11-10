@@ -29,7 +29,7 @@ $$\text{User Speech} \longrightarrow \text{Gnani Prisma STT} \longrightarrow \te
 5. **Comparison & Trade-offs:** Ranked comparison highlighting pricing, speed, rating, and constraint eligibility.
 6. **Voice & Visual Selection:** Dual presentation where the interface highlights winning offers and Gnani Timbre vocalizes the trade-offs.
 7. **Explicit Approval:** Strict requirement for user confirmation of the exact calculated total before unlocking payment.
-8. **Jugaad Pay (Simulated Checkout):** In-app demonstration payment using fictional payment methods (such as demo UPI `@demo`), protected by server-side idempotency keys.
+8. **Jugaad Pay (Simulated Checkout):** The dedicated `/payment` route loads the approved quote from the current session and displays a fictional payer identity. Demo authorization reuses the existing simulated services and server-side idempotency protections. The page shows success only after confirmed booking.
 9. **Backend-Confirmed Booking:** Orders submitted to the provider backend with polling verification ensuring receipts are only issued upon genuine provider acknowledgment.
 10. **Persistent Tracking:** 7-step simulated tracking lifecycle (`confirmed`, `preparing`, `partner_assigned`, `arriving_for_pickup`, `picked_up`, `out_for_delivery`, `delivered`) with elapsed time updates.
 
@@ -44,7 +44,7 @@ $$\text{User Speech} \longrightarrow \text{Gnani Prisma STT} \longrightarrow \te
 * **Hinglish (`hi-en`):** Voice: *Poorvi*
 
 ### Language Intelligence Rules
-* **Microphone permission first:** First-time visitors can enable the microphone or continue with text. Spoken locale choices are confirmed before changing recognition and playback. Returning profiles reuse their saved locale.
+* **Microphone permission first:** Try Jugaad requests microphone access from the entry click. New visitors confirm a detected location or choose a service city before selecting a language and giving their name. A text path is available. Spoken locale choices are confirmed before changing recognition and playback. Returning profiles reuse their saved locale.
 * **Code-Switching:** Preserve mixed-language context (e.g. *"Hyderabad mein biryani chahiye, under 400"*).
 * **Same-Language Responses:** Spoken output must match the user's conversational language.
 * **Grounded Currency Pronunciation:** Amounts (e.g. ₹402.45) must be vocalized naturally in the active language (e.g., *"₹402 रुपये और 45 पैसे"* or *"₹402 రూపాయలు 45 పైసలు"*), never read as isolated digits.

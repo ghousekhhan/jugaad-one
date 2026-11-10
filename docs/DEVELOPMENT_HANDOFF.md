@@ -3,9 +3,37 @@
 **Workspace** `/Users/khajaghousekhan/Desktop/Jugaad_ONE`  
 **Outgoing agent** OpenAI Codex  
 **Incoming agent** Google Antigravity  
-**Shift status** Product recovery / Handing over to Antigravity  
-**Last updated** 2026-11-10T11:47:34+05:30 (Asia/Kolkata)  
-**Git** This directory is not a Git repository (`fatal: not a git repository`). Branch, commit hash, recent commits, and tracked/uncommitted status are unavailable.
+**Shift status** Voice and payment overhaul / Handing over to Antigravity
+
+**Last updated** 2026-11-10T19:53:33+05:30 (Asia/Kolkata)
+
+**Git** Local branch `main` tracks `origin/main`. See the latest handoff for this shift.
+
+---
+
+## CODEX HANDOFF — VOICE WORKSPACE AND JUGAAD PAY
+
+**Timestamp** 2026-11-10T19:53:33+05:30 (Asia/Kolkata)
+
+**Workspace** Git branch `main`. Base commit `e834623`. Changes are local.
+
+- `try-jugaad.tsx`, `workspace.tsx` and `voice-controls.tsx` request microphone access from the homepage CTA when the browser supports it, confirm device location or a manually chosen city before language and name, and expose Start Conversation and End voice. The existing Prisma WAV flow still supplies finalized transcripts. Captions appear when Prisma returns a final result.
+- `marketplace/discovery.ts`, `food-discovery.tsx` and `dialogue/controller.ts` place the top-ranked eligible quote from each provider first, retain exact offer IDs, and report incomplete searches. The remaining results are available under More eligible offers. The controller retains the existing Gemini plan path and adds deterministic number-game state isolated from commerce.
+- `commerce/booking.ts`, `commerce/types.ts`, `dialogue/state.ts`, `api/commerce/route.ts` and `sandbox-commerce.tsx` apply JUGAAD20 only when the owner has no prior confirmed order in Jugaad’s own checkout. The optional 20% reduction applies to the base item subtotal, excluding add-ons and fees. Applying or declining replaces the quote ID, and the new total requires approval. Anonymous eligibility is scoped to the browser session. Provider quotes retain their provider-supplied totals.
+- `app/payment/page.tsx`, `payment.css`, `payment-screen.tsx`, `payment-celebration.tsx`, `demo-keypad.tsx` and `lib/payment.ts` deliver a dedicated checkout that resolves approved quotes and existing receipts with the current owner cookie. The generated payer handle is a display alias. The keypad accepts the displayed demo code locally. Both simulated transaction services retain their existing idempotency protections. The confirmation animation runs only after a successful response and respects reduced motion.
+- `food-checkout.tsx` and `workspace.tsx` navigate from approved quotes to Jugaad Pay and open the persisted receipt from View order. The workspace requests a payment route from the dialogue controller. API clients that omit the new flag retain the original voice authorization contract. There are no new packages, environment keys or database schema changes.
+- Chrome verified permission denial and fixture-based location confirmation, saved profile restoration and desktop/mobile layout at 1440 × 900, 1366 × 768 and 390 × 844. The final voice browser suite exercised mocked Prisma finals, spoken language confirmation, recommendation, welcome offer consent and quote approval before authorizing on the dedicated payment page. A live read-only Hyderabad search returned Wiggy at ₹450.45 and Tomato at ₹459.35, with quote evidence from both providers. The local unit suite covers 79 cases, including the 30-utterance regression, promotion consent and routing to payment without creating an order.
+- The payment browser regression passed the direct-route gate, exact discounted quote and payer display, mobile keypad, cancel return, keyboard input, one request while processing, injected API failure, retry, confirmed receipt, reduced motion and refresh with one persisted order. Browser payment audio was intercepted for this run. With live provider testing enabled, Wiggy confirmed a simulated booking at the exact approved amount and the confirmed order appeared in stored transactions. Lint, typecheck and the production build passed.
+- Physical microphone, live partial transcripts and Vercel deployment are outside the evidence of this shift. Production transaction storage still depends on the Vercel PostgreSQL configuration. Screenshots are under the Codex visualization folder `jugaad-overhaul`.
+
+---
+
+## CODEX HANDOFF — PRODUCT TERMINOLOGY
+
+**Timestamp** 2026-11-10T19:27:22+05:30 (Asia/Kolkata)
+
+- Removed “sandbox” and “prototype” from customer-facing terminology across the homepage, workspace, checkout, receipts, errors and spoken replies. The copy still identifies fictional providers and simulated orders and payments. Internal API identifiers and transaction rules were preserved.
+- Updated existing test selectors and the simulated review assertion. All 76 unit tests, lint, typecheck and the production build passed.
 
 ---
 

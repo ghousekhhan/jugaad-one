@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { ShieldCheck, Delete, ArrowLeft } from "lucide-react";
 import { demoCode } from "@/lib/commerce/types";
 import { Button } from "./ui";
+
+const subscribeToHydration = () => () => {};
+const clientSnapshot = () => true;
+const serverSnapshot = () => false;
 
 export function DemoKeypad({
   pending,
@@ -21,23 +25,41 @@ export function DemoKeypad({
   onCancel?: () => void;
 }) {
   const [code, setCode] = useState("");
+  const enabled = useSyncExternalStore(subscribeToHydration, clientSnapshot, serverSnapshot) && !pending;
 
   function handleDigit(digit: string) {
-    if (pending || code.length >= 4) return;
-    setCode((val) => val + digit);
+    if (!enabled || code.length >= 4) return;
+    setCode((value) => value.length < 4 ? value + digit : value);
+    navigator.vibrate?.(8);
   }
 
   function handleDelete() {
-    if (pending || !code) return;
+    if (!enabled || !code) return;
     setCode((val) => val.slice(0, -1));
   }
 
   function handleQuickFill() {
-    if (pending) return;
+    if (!enabled) return;
     setCode(demoCode);
   }
 
   const isMatched = code === demoCode;
+  useEffect(() => {
+    if (!enabled) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.repeat ||
+          (event.target instanceof HTMLElement && event.target.matches("input, textarea, [contenteditable]"))) return;
+      if (/^[0-9]$/u.test(event.key)) {
+        event.preventDefault();
+        setCode((value) => value.length < 4 ? value + event.key : value);
+      } else if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        setCode((value) => value.slice(0, -1));
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [enabled]);
 
   return (
     <div className="jugaad-pay-scene" aria-label="Jugaad Pay simulated payment">
@@ -45,7 +67,7 @@ export function DemoKeypad({
       <div className="jugaad-pay-scene__header">
         <div className="jugaad-pay-scene__badge">
           <ShieldCheck size={16} className="text-emerald-700" aria-hidden="true" />
-          <span>Jugaad Pay · Sandbox Demo</span>
+          <span>Jugaad Pay · Simulated payment</span>
         </div>
         {totalFormatted && (
           <div className="jugaad-pay-scene__amount">
@@ -61,10 +83,10 @@ export function DemoKeypad({
       {/* Code Prompt & PIN Dots */}
       <div className="jugaad-pay-scene__body">
         <p className="jugaad-pay-prompt">
-          Enter 4-digit <strong>Demo Confirmation Code</strong>
+          Enter the <strong>four-digit demo PIN</strong> to authorize this simulated payment.
         </p>
 
-        <div className="jugaad-pay-dots" aria-label="Digits entered">
+        <div className="jugaad-pay-dots" aria-label={`${code.length} of 4 demo digits entered`}>
           {[0, 1, 2, 3].map((index) => {
             const hasDigit = code.length > index;
             return (
@@ -87,7 +109,7 @@ export function DemoKeypad({
           type="button"
           className="demo-code-helper-pill"
           onClick={handleQuickFill}
-          disabled={pending}
+          disabled={!enabled}
         >
           <span>Demo code is <strong>{demoCode}</strong></span>
           <span className="demo-code-helper-tap">Tap to autofill</span>
@@ -100,7 +122,7 @@ export function DemoKeypad({
               key={digit}
               type="button"
               className="jugaad-keypad-btn"
-              disabled={pending || code.length >= 4}
+              disabled={!enabled || code.length >= 4}
               onClick={() => handleDigit(digit)}
             >
               {digit}
@@ -109,7 +131,7 @@ export function DemoKeypad({
           <button
             type="button"
             className="jugaad-keypad-btn jugaad-keypad-btn--action"
-            disabled={pending || !code}
+            disabled={!enabled || !code}
             onClick={handleDelete}
             aria-label="Delete last digit"
           >
@@ -118,7 +140,7 @@ export function DemoKeypad({
           <button
             type="button"
             className="jugaad-keypad-btn"
-            disabled={pending || code.length >= 4}
+            disabled={!enabled || code.length >= 4}
             onClick={() => handleDigit("0")}
           >
             0
@@ -126,7 +148,7 @@ export function DemoKeypad({
           <button
             type="button"
             className="jugaad-keypad-btn jugaad-keypad-btn--clear"
-            disabled={pending || !code}
+            disabled={!enabled || !code}
             onClick={() => setCode("")}
             aria-label="Clear all digits"
           >
@@ -138,7 +160,7 @@ export function DemoKeypad({
         <div className="jugaad-pay-actions">
           <Button
             variant="primary"
-            disabled={pending || !isMatched}
+            disabled={!enabled || !isMatched}
             onClick={onConfirm}
             className="jugaad-pay-confirm-btn"
           >
@@ -148,7 +170,7 @@ export function DemoKeypad({
           {onCancel && (
             <Button
               variant="quiet"
-              disabled={pending}
+              disabled={!enabled}
               onClick={onCancel}
               className="jugaad-pay-cancel-btn"
             >
@@ -158,7 +180,7 @@ export function DemoKeypad({
         </div>
 
         <p className="jugaad-pay-disclaimer">
-          Sandbox simulation only. No real payment networks, UPI credentials, or real bank balances are involved.
+          This payment is simulated. Your bank balance will stay the same.
         </p>
       </div>
     </div>

@@ -26,11 +26,11 @@ function createHarness(initialLanguage: VoiceLocale = "en-IN", initialName = "à°
   let modelCalls = 0;
   let searchCalls = 0;
 
-  async function turn(text: string, planned?: Interpretation, persisted = true, voiceLanguage?: VoiceLocale) {
+  async function turn(text: string, planned?: Interpretation, persisted = true, voiceLanguage?: VoiceLocale, paymentPage = false) {
     const lang = voiceLanguage ?? state.dialogue?.lastLanguage ?? state.profile?.language ?? "en-IN";
     await updateSession(owner, (s) => ({ ...s, searchId: requestId, ...state }));
     const result = await orchestrate(
-      { text, current: {}, location, recentRequests: [], voiceLanguage: lang },
+      { text, current: {}, location, recentRequests: [], voiceLanguage: lang, paymentPage },
       state,
       {
         signal: new AbortController().signal,
@@ -189,6 +189,13 @@ test("Scenario H: User accepts a modifier ('Add extra cheese'); total and budget
   assert.equal(turn.dialogueAction, "customize_item");
   assert.match(turn.reply, /Added Extra cheese/iu);
   assert.ok(app.session().quote?.offer.selectedModifiers?.some((m) => m.name === "Extra cheese"));
+  const before = app.session().quote!;
+  assert.equal(app.session().dialogue?.confirmation?.type, "welcome_offer");
+  const { state } = await app.turn("Yes");
+  assert.equal(state.quote?.offer.totalPaise, before.offer.totalPaise - before.welcomeOffer!.discountPaise);
+  assert.notEqual(state.quote?.id, before.id);
+  assert.equal(state.quote?.approvedAt, undefined);
+  assert.equal(state.orders.length, 0);
 });
 
 // Scenario I: User asks why one option is more expensive. Jugaad explains stored cost differences without a new catalog search.
@@ -210,7 +217,7 @@ test("Scenario J: 'What do people like about this?' uses stored review evidence 
 
   const { turn } = await app.turn("What do people like about this?");
   assert.equal(turn.dialogueAction, "ask_reviews");
-  assert.match(turn.reply, /simulated sandbox reviews/iu);
+  assert.match(turn.reply, /simulated reviews/iu);
   assert.match(turn.reply, /Customers praise/iu);
 });
 
@@ -331,4 +338,35 @@ test("an expired or changed quote cannot use a previous voice authorization", as
   await app.turn("Wait");
   await app.turn("Yes, proceed");
   assert.equal(app.session().orders.length, 0);
+});
+
+test("a number game keeps its answer on the server and never calls commerce", async () => {
+  const app = createHarness("en-IN");
+  const started = await app.turn("Jugaad, let's play a game.");
+  const number = started.state.dialogue?.game?.number;
+  assert.ok(number && number >= 1 && number <= 10);
+  assert.equal("game" in started.turn, false);
+  const guess = await app.turn(number === 10 ? "one" : "ten");
+  assert.match(guess.turn.reply, /Try a (?:higher|lower) number/);
+  assert.equal(guess.state.dialogue?.game?.number, number);
+  const won = await app.turn(String(number));
+  assert.equal(won.turn.reply, "You got it!");
+  assert.equal(won.state.dialogue?.game, undefined);
+  assert.equal(app.stats().searchCalls, 0);
+  assert.equal(app.stats().modelCalls, 0);
+  assert.equal(won.state.orders.length, 0);
+});
+
+test("workspace voice approval opens the exact payment page without placing an order", async () => {
+  const app = createHarness("en-IN");
+  const workspaceTurn = (text: string) => app.turn(text, undefined, true, "en-IN", true);
+  await workspaceTurn("I want something sweet, maybe cake");
+  const selected = await workspaceTurn("Mirchi Moon");
+  assert.equal(selected.state.dialogue?.confirmation?.type, "welcome_offer");
+  await workspaceTurn("No");
+  const approved = await workspaceTurn("Yes");
+  assert.ok(approved.state.quote?.approvedAt);
+  assert.equal(approved.turn.paymentPath, `/payment?source=jugaad&id=${approved.state.quote.id}`);
+  assert.equal(approved.state.dialogue?.confirmation, undefined);
+  assert.equal(approved.state.orders.length, 0);
 });

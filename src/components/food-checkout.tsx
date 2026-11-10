@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CircleCheck, ReceiptText } from "lucide-react";
-import { DemoKeypad } from "./demo-keypad";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { paymentHref } from "@/lib/payment";
 import { Button, Panel } from "./ui";
 import { QuoteFees, type SelectedFoodOffer } from "./food-discovery";
 import { postJson, requestJson, RequestError } from "@/lib/client-request";
@@ -36,18 +38,15 @@ export function FoodCheckout({ selected, configured, onUpdate, voiceLanguage, on
   const initialLine = (initialTransaction?.quote ?? comparisonQuote).lineItems[0];
   const [quantity, setQuantity] = useState(() => String(initialLine.quantity));
   const [options, setOptions] = useState(() => initialLine.selectedOptions.map(({ groupId, optionId }) => ({ groupId, optionId })));
-  const [checkoutOpen, setCheckoutOpen] = useState(initialTransaction?.phase === "approved");
+  const router = useRouter();
   const [pending, setPending] = useState<CheckoutAction["action"]>();
   const [error, setError] = useState("");
   const inFlight = useRef(false);
-  const checkoutHeading = useRef<HTMLHeadingElement>(null);
   const quote = transaction?.quote ?? comparisonQuote;
   const phase = transaction?.phase;
   const speechEvent = phase === "quoted" ? "approval" : phase === "confirmed" ? "confirmation" : undefined;
   const announcement = transaction && voiceLanguage && speechEvent ? transactionSpeech(transaction, speechEvent, voiceLanguage) : undefined;
   const customizationLocked = Boolean(selected.search.dietary || selected.search.dietaryRestrictions?.length || selected.search.allergens?.length);
-
-  useEffect(() => { if (checkoutOpen) checkoutHeading.current?.focus(); }, [checkoutOpen]);
 
   function toggleOption(groupId: string, optionId: string, single: boolean, checked: boolean) {
     setOptions((current) => {
@@ -65,15 +64,10 @@ export function FoodCheckout({ selected, configured, onUpdate, voiceLanguage, on
       const result = await postJson<FoodTransaction>("/api/marketplace/transactions", action);
       setTransaction(result);
       onUpdate(result);
-      if (action.action === "quote" || action.action === "pay") {
-        setCheckoutOpen(false);
-
-      }
+      if (action.action === "approve" && result.phase === "approved") router.push(paymentHref("provider", result.id));
     } catch (failure) {
       if (failure instanceof RequestError && failure.code === "QUOTE_EXPIRED") {
         setTransaction(undefined);
-        setCheckoutOpen(false);
-
       }
       setError(failure instanceof Error ? failure.message : "Checkout could not be completed.");
     } finally {
@@ -92,18 +86,13 @@ export function FoodCheckout({ selected, configured, onUpdate, voiceLanguage, on
     void perform({ action: "quote", provider: item.provider.id, branchId: item.restaurant.branchId, item: { menuItemId: item.id, quantity: count, selectedOptions: options }, search: selected.search });
   }
 
-  function submitPayment() {
-    if (!transaction) return;
-    void perform({ action: "pay", id: transaction.id, demoUpi: "jugaad@demo", confirmed: true });
-  }
-
   return <div className="food-checkout">
     <p className="workspace-help">{item.provider.name} · {item.restaurant.name}</p>
     <h4>{item.name}</h4>
-    <p className="meta">{transaction ? "Exact sandbox quote" : "Comparison quote"} · Expires at {localTime.format(new Date(quote.expiresAt))} IST</p>
+    <p className="meta">{transaction ? "Exact quote" : "Comparison quote"} · Expires at {localTime.format(new Date(quote.expiresAt))} IST</p>
     <ul className="checkout-lines">{quote.lineItems.map((line) => <li key={line.menuItemId}>{line.quantity} × {line.name}{line.selectedOptions.length > 0 && <span className="meta">{line.selectedOptions.map(({ name }) => name).join(", ")}</span>}</li>)}</ul>
     <QuoteFees quote={quote} />
-    {!configured && <p className="workspace-help">Sandbox checkout requires a configured marketplace key and transaction storage.</p>}
+    {!configured && <p className="workspace-help">Checkout is temporarily unavailable.</p>}
     {configured && (!transaction || phase === "rejected") && <>
       {phase === "rejected" && <p className="field-error" role="alert">{bookingIssue(transaction?.failure)}</p>}
       <div className="workspace-field"><label htmlFor="checkout-quantity">Quantity</label><input id="checkout-quantity" type="number" min="1" max="20" value={quantity} onChange={(event) => setQuantity(event.target.value)} /></div>
@@ -122,19 +111,8 @@ export function FoodCheckout({ selected, configured, onUpdate, voiceLanguage, on
       <Button disabled={Boolean(pending)} onClick={() => void perform({ action: "approve", id: transaction.id, totalPaise: transaction.quote.pricing.totalPaise })}>{pending === "approve" ? "Approving…" : "Approve final total"}</Button>
       <Button variant="quiet" disabled={Boolean(pending)} onClick={() => setTransaction(undefined)}>Change quote</Button>
     </div>}
-    {configured && transaction && phase === "approved" && !checkoutOpen && <Button onClick={() => setCheckoutOpen(true)}>Complete transaction</Button>}
-    {configured && transaction && phase === "approved" && checkoutOpen && <div className="checkout-payment">
-      <h4 ref={checkoutHeading} tabIndex={-1}>Jugaad Pay · Simulated Authorization</h4>
-      <DemoKeypad
-        key={transaction.id}
-        pending={Boolean(pending)}
-        totalFormatted={formatPaise(quote.pricing.totalPaise)}
-        merchantName={`${quote.provider.name} · ${item.restaurant.name}`}
-        label={pending === "pay" ? "Verifying provider booking…" : `Authorize simulated payment · ${formatPaise(quote.pricing.totalPaise)}`}
-        onConfirm={submitPayment}
-        onCancel={() => setCheckoutOpen(false)}
-      />
-    </div>}
+    {configured && transaction && phase === "approved" &&
+      <Link className="btn btn-orange" href={paymentHref("provider", transaction.id)}>Continue to Jugaad Pay</Link>}
     {transaction && (phase === "booking" || phase === "reconciliation") && <div className="checkout-payment">
       <p className="workspace-help" role="status">{phase === "booking" ? "The simulated payment was recorded. Provider verification is in progress." : "The simulated payment was recorded. The provider outcome needs verification."}</p>
       <Button variant="secondary" disabled={Boolean(pending)} onClick={() => void perform({ action: "retry", id: transaction.id })}>{pending === "retry" ? "Checking…" : "Check booking again"}</Button>
@@ -164,7 +142,7 @@ function ReceiptTracking({ transaction }: { transaction: FoodTransaction }) {
   return <div className="receipt-tracking">
     <div className="workspace-subhead">
       {!tracking.terminal && <CircleCheck className="receipt-check" size={20} aria-hidden="true" />}
-      <h3>{tracking.terminal ? `Simulated order ${statusLabels[order.currentStatus].toLowerCase()}` : "Provider-confirmed sandbox receipt"}</h3>
+      <h3>{tracking.terminal ? `Simulated order ${statusLabels[order.currentStatus].toLowerCase()}` : "Receipt for simulated order"}</h3>
     </div>
     <p>{order.provider.name} · <strong>{order.reference}</strong> · {formatPaise(order.pricing.totalPaise)}</p>
     <p className="workspace-help">{transaction.restaurant} · {statusLabels[order.currentStatus]}. Tracking advances with elapsed time in the simulation.</p>
@@ -231,7 +209,7 @@ export function OrderHistory({ summary, initialError, activeId, onActivate, onUp
   }
 
   return <Panel className="marketplace-history" id="order-history">
-    <div className="workspace-subhead"><ReceiptText size={18} aria-hidden="true" /><h2>Sandbox order history</h2></div>
+    <div className="workspace-subhead"><ReceiptText size={18} aria-hidden="true" /><h2>Order history</h2></div>
     {initialError ? <><p className="field-error" role="alert">{initialError}</p><Button variant="quiet" onClick={onReload}>Reload history</Button></> : !summary ? <p className="workspace-help" role="status">Loading transaction history…</p> : !active ? <p className="workspace-help">Provider-confirmed receipts and pending booking attempts appear here.</p> : <>
       {transactions.length > 1 && <div className="workspace-field"><label htmlFor="tracked-order">Choose a transaction</label><select id="tracked-order" value={active.id} onChange={(event) => { setPollError(""); onActivate(event.target.value); }}>
         {transactions.map((entry) => <option key={entry.id} value={entry.id}>{entry.order?.reference ?? `${entry.quote.provider.name} · ${entry.phase}`} · {formatPaise(entry.quote.pricing.totalPaise)}</option>)}

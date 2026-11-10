@@ -43,6 +43,7 @@ export const interpretationInputSchema = z.object({
   location: locationSchema.optional(),
   voiceLanguage: voiceLocale.optional(),
   turnId: z.uuid().optional(),
+  paymentPage: z.boolean().optional(),
 }).strict();
 
 export type FoodIntent = z.infer<typeof foodIntentSchema>;
@@ -80,6 +81,7 @@ export type FoodTurn = {
   taskId?: string;
   keepSelection?: boolean;
   providerTransaction?: FoodTransaction;
+  paymentPath?: string;
   voiceControl?: "stop" | "stop_speech" | "pause" | "mute";
   selectedOfferId?: string;
 };

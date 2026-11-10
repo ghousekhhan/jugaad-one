@@ -1,9 +1,9 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { persistListings, totalFor } from "../commerce/catalog";
 import { discoverCommerce, serviceRegion } from "../commerce/discovery";
-import { bookCommerce, commerceSpeech, trackingSpeech } from "../commerce/booking";
+import { bookCommerce, commerceSpeech, trackingSpeech, welcomeOfferSpeech } from "../commerce/booking";
 import { updateSession, type Session } from "../commerce/session";
 import { applyFoodIntent, type FoodIntent, type FoodTurn, type Interpretation, type InterpretationInput, type ReasoningInput } from "../integrations/food-intent";
 import { runFoodTurn } from "../integrations/food-conversation";
@@ -14,7 +14,8 @@ import { transactionStore } from "../marketplace/transaction-store";
 import { spokenPrice } from "../voice/replies";
 import { issueSpeechTicket, readSpeechTicket } from "../voice/speech-ticket";
 import type { VoiceLocale } from "../voice/types";
-import { demoCode } from "../commerce/types";
+import { appliedWelcomeDiscount, demoCode } from "../commerce/types";
+import { paymentHref } from "../payment";
 import { transactionSpeech } from "../voice/transaction-speech";
 import { confirmationAnswer } from "./confirmation";
 import { directAction } from "./actions";
@@ -31,7 +32,7 @@ function facts(task?: Task) {
     listing: undefined, selectedModifiers: undefined,
   }));
   return (task?.turn.sandbox?.offers ?? []).map(({ listing, quantity, totalPaise, selectedModifiers }) => ({
-    id: listing.id, name: listing.name, seller: listing.seller, provider: "Jugaad Sandbox", total: totalPaise,
+    id: listing.id, name: listing.name, seller: listing.seller, provider: "Jugaad One", total: totalPaise,
     eta: listing.etaMinutes, rating: listing.rating, subtotal: listing.pricePaise * quantity,
     listing, selectedModifiers,
   }));
@@ -58,7 +59,7 @@ const missing = {
   "te-IN": "ఏ ఎంపిక కావాలి? దాని నంబర్ చెప్పండి.",
 };
 const help = {
-  "en-IN": "Ask me to find and compare something, explain an offer, or review your sandbox checkout. To change location, open your profile.",
+  "en-IN": "Ask me to find and compare something, explain an offer, or review your checkout. To change location, open your profile.",
   "hi-IN": "आप मुझसे विकल्प ढूँढने, तुलना करने या डेमो चेकआउट की समीक्षा करने को कह सकते हैं। पता बदलने के लिए प्रोफ़ाइल खोलें।",
   "hi-en": "Mujhse options dhoondhne, compare karne ya demo checkout review karne ko kahiye. Location ke liye profile kholiye.",
   "te-IN": "ఎంపికలు వెతకడం, పోల్చడం లేదా డెమో చెక్అవుట్ చూడమని అడగండి. ప్రదేశం మార్చడానికి ప్రొఫైల్ తెరవండి.",
@@ -92,8 +93,9 @@ function offerSummary(task: Task | undefined, language: VoiceLocale, limit = 3, 
     "te-IN": `తక్కువ ధరకు ${lowIndex}, త్వరగా రావడానికి ${fastIndex}, రేటింగ్ కోసం ${highIndex} ఎంపికలను చూడండి.`,
   }[language];
   const distinctItems = new Set(rows.map(({ name }) => name)).size > 1;
-  const details = rows.map(({ seller, name, total, eta, rating }) => {
-    const label = distinctItems ? `${name.slice(0, 25)} · ${seller.slice(0, 18)}` : seller;
+  const details = rows.map(({ seller, provider, name, total, eta, rating }) => {
+    const source = task?.turn.comparison?.result.kind === "offers" ? `${provider}, ` : "";
+    const label = source + (distinctItems ? `${name.slice(0, 25)} · ${seller.slice(0, 18)}` : seller);
     const price = spokenPrice(total, language);
     return {
       "en-IN": `${label}: ${price}, up to ${eta} minutes, rating ${rating}.`,
@@ -239,11 +241,23 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
   let resultLanguage = language;
   const answer = confirmationAnswer(input.text);
   const pending = dialogue.confirmation;
+  const gameText = input.text.trim().replace(/[.!?।]+$/u, "");
+  const gameStart = /^(?:(?:jugaad,? )?(?:let['’]s|can we) play(?: a game| guess the number)|play (?:a game|guess the number))$/iu.test(gameText);
+  const gameStop = /^(?:stop|end|quit) (?:the )?game$/iu.test(gameText);
+  const spokenNumbers = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+  const guessText = gameText.toLowerCase().replace(/^(?:i guess |my guess is )/u, "");
+  const guess = dialogue.game && (/^(?:10|[1-9])$/u.test(guessText) ? Number(guessText) : spokenNumbers.indexOf(guessText) + 1);
+  const gameAction = !task && !session.quote && !session.providerQuoteId && (gameStart || (dialogue.game && (gameStop || guess)));
+
   const pendingOffer = pending?.type === "offer" && pending.taskId === task?.id ? pending : undefined;
+  const pendingWelcome = pending?.type === "welcome_offer" && pending.id === session.quote?.id
+    && session.quote.welcomeOffer?.status === "available" ? pending : undefined;
   const pendingPayment = pending?.type === "payment" && pending.id === (session.quote?.id ?? session.providerQuoteId) ? pending : undefined;
   const correctedReference = input.text.replace(/^(?:(?:no|nope|nahin?|kaadu)[, ]+|actually[,]?\s+(?:i meant|make it)\s+)/iu, "");
   const correction = task && correctedReference !== input.text ? directAction(correctedReference) : undefined;
-  const direct = answer === "yes" && pendingOffer ? { action: "select" as const, offerId: pendingOffer.id }
+  const direct = gameAction ? { action: "answer" as const }
+    : answer && pendingWelcome ? { action: answer === "yes" ? "approve" as const : "reject" as const }
+    : answer === "yes" && pendingOffer ? { action: "select" as const, offerId: pendingOffer.id }
     : answer === "yes" && (pendingPayment || dialogue.awaitingApproval) ? { action: "approve" as const }
     : correction?.action === "select" ? correction
     : answer === "no" && (pendingOffer || pendingPayment || dialogue.awaitingApproval) ? { action: "reject" as const }
@@ -310,10 +324,11 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
   let awaitingApproval = dialogue.awaitingApproval;
   let confirmation: Dialogue["confirmation"] = action === "repeat" ? pending : undefined;
   let previous = dialogue.previous;
+  let game = dialogue.game;
   let recommendation = dialogue.recommendation;
   const asTurn = (reply: string, status: FoodTurn["status"] = "results"): FoodTurn => ({
     ...(task?.turn ?? { constraints: current, intent: plan.intent }),
-    model, status, reply, replyLanguage: resultLanguage, keepSelection: true, speechTicket: undefined, providerTransaction: undefined,
+    model, status, reply, replyLanguage: resultLanguage, keepSelection: true, speechTicket: undefined, providerTransaction: undefined, paymentPath: undefined,
     selectedQuoteId: undefined, voiceControl: undefined, selectedOfferId: task?.selectedId,
   });
   let turn: FoodTurn;
@@ -349,7 +364,7 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
     const rev = listing?.reviews;
     if (rev) {
       const reply = {
-        "en-IN": `In simulated sandbox reviews for ${relevant?.name ?? "this item"} from ${relevant?.seller ?? "Mirchi Moon"} (${rev.rating}★ from ${rev.count} demo ratings): ${rev.summary} Feedback highlights: ${rev.positivePoints?.join(", ")}. Note: ${rev.complaints?.join(", ")}.`,
+        "en-IN": `In simulated reviews for ${relevant?.name ?? "this item"} from ${relevant?.seller ?? "Mirchi Moon"} (${rev.rating}★ from ${rev.count} demo ratings): ${rev.summary} Feedback highlights: ${rev.positivePoints?.join(", ")}. Note: ${rev.complaints?.join(", ")}.`,
         "hi-IN": `${relevant?.seller ?? "Mirchi Moon"} के ${relevant?.name ?? "इस सामान"} के डेमो रिव्यूज (${rev.rating}★, ${rev.count} रेटिंग): ${rev.summary} मुख्य बातें: ${rev.positivePoints?.join(", ")}।`,
         "hi-en": `${relevant?.seller ?? "Mirchi Moon"} ke ${relevant?.name ?? "item"} ke demo reviews (${rev.rating}★): ${rev.summary} Highlights: ${rev.positivePoints?.join(", ")}.`,
         "te-IN": `${relevant?.seller ?? "Mirchi Moon"} వారి ${relevant?.name ?? "ఈ వస్తువు"} డెమో సమీక్షల్లో (${rev.rating}★, ${rev.count} రేటింగ్‌లు): ${rev.summary} ముఖ్య అంశాలు: ${rev.positivePoints?.join(", ")}.`,
@@ -357,7 +372,7 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
       turn = asTurn(reply);
     } else {
       turn = asTurn({
-        "en-IN": "This item has no recorded review evidence in the simulated sandbox.",
+        "en-IN": "There are no simulated reviews for this item.",
         "hi-IN": "इस डेमो सामान के लिए कोई समीक्षा दर्ज नहीं है।",
         "hi-en": "Is demo item ke liye koi recorded reviews nahi hain.",
         "te-IN": "ఈ డెమో వస్తువుకు నమోదైన సమీక్షలు లేవు.",
@@ -454,7 +469,7 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
         } else {
           const existing = currentQuote.offer.selectedModifiers ?? [];
           const nextModifiers = existing.some(({ id }) => id === mod.id) ? existing : [...existing, mod];
-          const newTotal = totalFor(currentQuote.offer.listing, currentQuote.offer.quantity, nextModifiers);
+          const newTotal = totalFor(currentQuote.offer.listing, currentQuote.offer.quantity, nextModifiers) - appliedWelcomeDiscount(currentQuote);
           const budgetPaise = current.budgetPaise;
           if (budgetPaise !== undefined && (current.budgetExclusive ? newTotal >= budgetPaise : newTotal > budgetPaise)) {
             const overrun = spokenPrice(newTotal - budgetPaise, resultLanguage);
@@ -478,7 +493,18 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
               "hi-en": `${mod.name} add ho gaya. Updated total ${totStr} hai. Kya aap ise approve karenge?`,
               "te-IN": `${mod.name} జతచేయబడింది. నవీకరించిన మొత్తం ${totStr}. ఆమోదిస్తారా?`,
             }[resultLanguage];
-            turn = asTurn(reply, "selected");
+            const welcome = welcomeOfferSpeech(resultLanguage, state.quote);
+            if (welcome && state.quote) {
+              confirmation = { type: "welcome_offer", id: state.quote.id };
+              awaitingApproval = undefined;
+            }
+            const added = {
+              "en-IN": `Added ${mod.name}.`,
+              "hi-IN": `${mod.name} जोड़ दिया गया।`,
+              "hi-en": `${mod.name} add ho gaya.`,
+              "te-IN": `${mod.name} జతచేయబడింది.`,
+            }[resultLanguage];
+            turn = asTurn(welcome ? `${added} ${welcome}` : reply, "selected");
           }
         }
       }
@@ -540,6 +566,26 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
     awaitingApproval = undefined;
     turn = { ...asTurn(plan.answer ?? ({ "en-IN": "Stopped.", "hi-IN": "रोक दिया।", "hi-en": "Rok diya.", "te-IN": "ఆపేశాను." })[resultLanguage]), intent: "other", constraints: {}, keepSelection: false,
       ...(action === "stop" ? { voiceControl: "stop" as const } : {}) };
+  } else if (gameAction) {
+    if (gameStart) {
+      game ??= { number: randomInt(1, 11) };
+      turn = asTurn({
+        "en-IN": "I picked a number from one to ten. What’s your guess?",
+        "hi-IN": "मैंने एक से दस के बीच एक संख्या चुनी है। आपका अनुमान क्या है?",
+        "hi-en": "Maine ek se das ke beech ek number chuna hai. Aapka guess?",
+        "te-IN": "ఒకటి నుంచి పది వరకు ఒక సంఖ్య ఎంచుకున్నాను. మీ అంచనా ఏమిటి?",
+      }[resultLanguage]);
+    } else {
+      const correct = guess === game?.number;
+      const higher = Number(guess) < (game?.number ?? 0);
+      if (correct || gameStop) game = undefined;
+      turn = asTurn({
+        "en-IN": gameStop ? "Game ended." : correct ? "You got it!" : higher ? "Try a higher number." : "Try a lower number.",
+        "hi-IN": gameStop ? "खेल खत्म।" : correct ? "सही जवाब!" : higher ? "इससे बड़ी संख्या बोलिए।" : "इससे छोटी संख्या बोलिए।",
+        "hi-en": gameStop ? "Game khatam." : correct ? "Sahi guess!" : higher ? "Bada number try karo." : "Chhota number try karo.",
+        "te-IN": gameStop ? "ఆట ముగిసింది." : correct ? "సరైన అంచనా!" : higher ? "ఇంకా పెద్ద సంఖ్య చెప్పండి." : "ఇంకా చిన్న సంఖ్య చెప్పండి.",
+      }[resultLanguage]);
+    }
   } else if (action === "answer" || action === "advice" || action === "help" || action === "greeting" || action === "clarification_answer") {
     const greeting = { "en-IN": "Hey! What can I get done for you?", "hi-IN": "नमस्ते! मैं आपकी क्या मदद करूँ?", "hi-en": "Hi! Aaj kis cheez mein help chahiye?", "te-IN": "నమస్కారం! మీకు ఏ సహాయం కావాలి?" };
     turn = { ...asTurn(plan.answer ?? (action === "greeting" ? greeting[resultLanguage] : help[resultLanguage])), intent: "other" };
@@ -558,6 +604,20 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
     if (!services.persisted || (action === "approve" && direct?.action !== "approve") ||
         ((action === "cancel" || action === "reject") && direct?.action !== "cancel" && direct?.action !== "reject")) {
       turn = asTurn(missing[resultLanguage], "clarification");
+    } else if (pendingWelcome && answer && (action === "approve" || action === "reject")) {
+      services.signal.throwIfAborted();
+      const updated = await bookCommerce(services.owner, { action: "welcome_offer", quoteId: pendingWelcome.id, accept: answer === "yes" }, services.requestId);
+      state = updated.session;
+      awaitingApproval = state.quote?.id;
+      const discount = state.quote ? appliedWelcomeDiscount(state.quote) : 0;
+      const savings = spokenPrice(discount, resultLanguage);
+      const applied = {
+        "en-IN": `You save ${savings}.`,
+        "hi-IN": `आपकी बचत ${savings} है।`,
+        "hi-en": `Aapki savings ${savings} hai.`,
+        "te-IN": `మీకు ${savings} ఆదా అవుతుంది.`,
+      }[resultLanguage];
+      turn = asTurn([discount ? applied : "", commerceSpeech(resultLanguage, state.quote)].filter(Boolean).join(" "), "selected");
     } else if (action === "reject" && pendingOffer) {
       turn = asTurn({ "en-IN": "I’ll keep the other options open.", "hi-IN": "बाकी विकल्प खुले हैं।", "hi-en": "Baaki options khule hain.", "te-IN": "మిగతా ఎంపికలు ఉన్నాయి." }[resultLanguage]);
     } else if (action === "select" && pendingOffer && answer === "yes" && task && !offersStillValid(task)) {
@@ -565,6 +625,8 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
     } else if (action === "approve" && quote && quote.expiresAt <= Date.now()) {
       awaitingApproval = undefined;
       turn = asTurn({ "en-IN": "The quote expired. Ask me for a fresh quote.", "hi-IN": "कोट की अवधि खत्म हो गई। नया कोट माँगें।", "hi-en": "Quote expire ho gaya. Fresh quote maangiye.", "te-IN": "కోట్ గడువు ముగిసింది. కొత్త కోట్ అడగండి." }[resultLanguage], "clarification");
+    } else if (action === "approve" && answer === "yes" && pendingPayment && input.paymentPage) {
+      turn = { ...asTurn(openPaymentReply(resultLanguage)), paymentPath: paymentHref(quote ? "jugaad" : "provider", pendingPayment.id) };
     } else if (action === "approve" && answer === "yes" && pendingPayment) {
       services.signal.throwIfAborted();
       tools.add("authorize_simulated_payment");
@@ -605,30 +667,45 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
       const updated = await bookCommerce(services.owner, { action: "approve", quoteId: quote.id, totalPaise: quote.offer.totalPaise }, services.requestId);
       state = { ...state, quote: updated.session.quote };
       awaitingApproval = undefined;
-      confirmation = { type: "payment", id: quote.id, totalPaise: quote.offer.totalPaise };
-      turn = asTurn(paymentAuthorization(quote.offer.totalPaise, resultLanguage));
+      if (input.paymentPage) {
+        turn = { ...asTurn(openPaymentReply(resultLanguage)), paymentPath: paymentHref("jugaad", quote.id) };
+      } else {
+        confirmation = { type: "payment", id: quote.id, totalPaise: quote.offer.totalPaise };
+        turn = asTurn(paymentAuthorization(quote.offer.totalPaise, resultLanguage));
+      }
     } else if (action === "approve" && state.providerQuoteId) {
       tools.add("verify_approval");
       const currentQuote = await readTransaction(services.owner, state.providerQuoteId, services.signal);
       if (currentQuote.phase !== "quoted") throw new MarketplaceError("INVALID_TRANSACTION_STATE", 409);
       const tx = await runCheckout(services.owner, { action: "approve", id: currentQuote.id, totalPaise: currentQuote.quote.pricing.totalPaise }, services.signal);
       awaitingApproval = undefined;
-      confirmation = { type: "payment", id: tx.id, totalPaise: tx.quote.pricing.totalPaise };
-      turn = { ...asTurn(paymentAuthorization(tx.quote.pricing.totalPaise, resultLanguage)), providerTransaction: tx };
+      if (input.paymentPage) {
+        turn = { ...asTurn(openPaymentReply(resultLanguage)), providerTransaction: tx, paymentPath: paymentHref("provider", tx.id) };
+      } else {
+        confirmation = { type: "payment", id: tx.id, totalPaise: tx.quote.pricing.totalPaise };
+        turn = { ...asTurn(paymentAuthorization(tx.quote.pricing.totalPaise, resultLanguage)), providerTransaction: tx };
+      }
     } else if (!relevant) turn = asTurn(missing[resultLanguage], "clarification");
     else if (historical.some(({ listing }) => listing.id === relevant.id)) {
       rememberOffer();
       tools.add("saved_comparison");
       if (quote && quote.offer.listing.id === relevant.id && quote.expiresAt > Date.now()) {
-        awaitingApproval = quote.approvedAt ? undefined : quote.id;
-        turn = asTurn(commerceSpeech(resultLanguage, quote) ?? paymentReply(resultLanguage), "selected");
+        const welcome = input.paymentPage && welcomeOfferSpeech(resultLanguage, quote);
+        awaitingApproval = quote.approvedAt || welcome ? undefined : quote.id;
+        if (welcome) confirmation = { type: "welcome_offer", id: quote.id };
+        turn = asTurn(welcome || commerceSpeech(resultLanguage, quote) || paymentReply(resultLanguage), "selected");
       }
       else {
         tools.add("prepare_quote");
         const updated = await bookCommerce(services.owner, { action: "select", listingId: relevant.id }, services.requestId);
         state = { ...state, quote: updated.session.quote };
         awaitingApproval = state.quote?.id;
-        turn = asTurn(commerceSpeech(resultLanguage, state.quote) ?? priceLine(relevant, resultLanguage), "selected");
+        const welcome = input.paymentPage && welcomeOfferSpeech(resultLanguage, state.quote);
+        if (welcome && state.quote) {
+          confirmation = { type: "welcome_offer", id: state.quote.id };
+          awaitingApproval = undefined;
+        }
+        turn = asTurn(welcome || commerceSpeech(resultLanguage, state.quote) || priceLine(relevant, resultLanguage), "selected");
       }
     } else {
       rememberOffer();
@@ -745,7 +822,12 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
       }
       const snapshot = found.sandbox ? { ...found, sandbox: { offers: found.sandbox.offers, orders: [] } } : found;
       task = { id: !isNew && task ? task.id : randomUUID(), turn: snapshot, domain: taskDomain(next), selectedId: found.selectedOfferId ?? found.selectedQuoteId };
-      const summary = facts(task).length >= 3 && !task.selectedId ? offerSummary(task, resultLanguage) : undefined;
+      const rows = facts(task);
+      const providerCount = found.comparison?.result.kind === "offers" ? new Set(rows.map(({ provider }) => provider)).size : undefined;
+      const showSummary = providerCount === undefined ? rows.length >= 3 : providerCount >= 2;
+      const summary = showSummary && found.status === "results" && !task.selectedId
+        ? offerSummary(task, resultLanguage)
+        : undefined;
       if (summary) task = { ...task, turn: { ...task.turn, reply: summary } };
       turn = summary ? { ...found, reply: summary, speechTicket: undefined } : found;
     }
@@ -755,7 +837,7 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
   const responseView = tools.has("prepare_quote") || tools.has("verify_approval") || (action === "prepare" && state.quote) ? "checkout" :
     canDiscover({ ...plan, action }) || ["select", "redisplay", "compare", "summarize", "recommend", "back"].includes(action) ? "comparison" : "conversation";
   const result: FoodTurn = { ...turn, replyLanguage: resultLanguage, dialogueAction: action, domain, transition, searchFailure: failure, responseView, taskId: task?.id,
-    ...(task?.turn.sandbox || turn.sandbox ? { sandbox: { offers: state.offers, quote: state.quote, orders: state.orders } } : {}),
+    ...(task?.turn.sandbox || turn.sandbox || state.quote || session.quote ? { sandbox: { offers: state.offers, quote: state.quote, orders: state.orders } } : {}),
     speechTicket: turn.voiceControl ? undefined : turn.speechTicket ?? issueSpeechTicket(turn.reply, resultLanguage) };
   const last = action === "stop" ? undefined : action === "repeat" || result.voiceControl ? dialogue.last : { text: result.reply, language: resultLanguage, ticket: result.speechTicket };
   result.trace = { turnId: services.requestId, reasoning: interpreted.source ?? "gemini_plan", tools: [...tools], searchAttempted, speechAvailable: Boolean(result.speechTicket), totalMs: Math.round(performance.now() - started) };
@@ -766,6 +848,7 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
       action, transition, tools: [...tools], nextPendingType: confirmation?.type, hasTask: Boolean(task) });
   }
   return { result, state: { ...state, dialogue: { task, previous, last, offerReply, awaitingApproval, confirmation, lastLanguage: resultLanguage,
+    game: transition === "end" || task ? undefined : game,
     recommendation: transition !== "switch" && facts(task).some(({ id }) => id === recommendation?.id) ? recommendation : undefined,
     history: transition === "end" ? [] : [...(transition === "switch" ? [] : dialogue.history ?? []),
       { user: input.text.slice(0, 240), reply: result.reply.slice(0, 550) }].slice(-4),
@@ -838,6 +921,15 @@ function quoteReply(total: number, language: VoiceLocale) {
     "te-IN": `ప్రస్తుత మొత్తం ${price}. ఈ మొత్తాన్ని ఆమోదిస్తారా?`,
   }[language];
 }
+function openPaymentReply(language: VoiceLocale) {
+  return {
+    "en-IN": "Your quote is approved. Authorize the simulated payment in Jugaad Pay.",
+    "hi-IN": "कोट मंज़ूर है। जुगाड़ पे में डेमो भुगतान की अनुमति दें।",
+    "hi-en": "Quote approve ho gaya. Jugaad Pay mein demo payment authorize karein.",
+    "te-IN": "కోట్ ఆమోదించబడింది. జుగాడ్ పేలో డెమో చెల్లింపును ఆమోదించండి.",
+  }[language];
+}
+
 function paymentAuthorization(total: number, language: VoiceLocale) {
   const amount = spokenPrice(total, language);
   return {

@@ -28,16 +28,20 @@ export type Listing = {
   reviews?: ReviewSummary;
 };
 export type Offer = { listing: Listing; quantity: number; totalPaise: number; selectedModifiers?: ModifierOption[] };
-export type SandboxQuote = { id: string; offer: Offer; expiresAt: number; approvedAt?: number };
+export type SandboxQuote = { id: string; offer: Offer; expiresAt: number; approvedAt?: number; welcomeOffer?: { status: "available" | "applied" | "declined"; discountPaise: number } };
 export type SandboxOrder = { reference: string; quote: SandboxQuote; confirmedAt: number; destination?: string; payment: "simulated_no_charge" };
 export type SandboxState = { offers: Offer[]; quote?: SandboxQuote; orders: SandboxOrder[] };
+export function appliedWelcomeDiscount(quote: SandboxQuote) {
+  return quote.welcomeOffer?.status === "applied" ? quote.welcomeOffer.discountPaise : 0;
+}
 export const demoCode = "2468";
 export const commerceAction = z.discriminatedUnion("action", [
   z.object({ action: z.literal("select"), listingId: z.string().uuid() }).strict(),
   z.object({ action: z.literal("approve"), quoteId: z.uuid(), totalPaise: z.number().int().positive() }).strict(),
-  z.object({ action: z.literal("pay"), quoteId: z.uuid(), code: z.literal(demoCode) }).strict(),
+  z.object({ action: z.literal("pay"), quoteId: z.uuid(), code: z.literal(demoCode), totalPaise: z.number().int().positive().optional() }).strict(),
   z.object({ action: z.literal("cancel"), quoteId: z.uuid() }).strict(),
   z.object({ action: z.literal("customize"), quoteId: z.uuid(), modifierId: z.string().min(1) }).strict(),
+  z.object({ action: z.literal("welcome_offer"), quoteId: z.uuid(), accept: z.boolean() }).strict(),
   z.object({ action: z.literal("status") }).strict(),
 ]);
 export type CommerceAction = z.infer<typeof commerceAction>;

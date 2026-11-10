@@ -218,7 +218,7 @@ export function OrderCustomizationScreen({
                   />
                   <span className="text-sm font-medium text-[#1F1F1F]">Debit / Credit Card (Simulated)</span>
                 </div>
-                <span className="text-xs text-[#6F6B65]">Sandbox</span>
+                <span className="text-xs text-[#6F6B65]">Simulated</span>
               </label>
 
               <label className="flex items-center justify-between p-3.5 rounded-2xl border border-[#E5DDD0] bg-white cursor-pointer opacity-60">
@@ -232,7 +232,7 @@ export function OrderCustomizationScreen({
                   />
                   <span className="text-sm font-medium text-[#1F1F1F]">Net Banking (Simulated)</span>
                 </div>
-                <span className="text-xs text-[#6F6B65]">Sandbox</span>
+                <span className="text-xs text-[#6F6B65]">Simulated</span>
               </label>
             </div>
           </div>

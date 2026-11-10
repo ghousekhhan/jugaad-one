@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatPaise } from "@/lib/marketplace/discovery-types";
-import { demoCode, trackingStage, type CommerceAction, type SandboxState } from "@/lib/commerce/types";
+import { appliedWelcomeDiscount, trackingStage, type CommerceAction, type SandboxState } from "@/lib/commerce/types";
 import { Button } from "./ui";
-import { DemoKeypad } from "./demo-keypad";
+import Link from "next/link";
+import { paymentHref } from "@/lib/payment";
 import { Clock, Star, ArrowRight, ShieldCheck, Tag } from "lucide-react";
 
 export function SandboxCommerce({
@@ -26,6 +27,7 @@ export function SandboxCommerce({
 
   const quote = state.quote;
   const offers = state.offers;
+  const welcomeDiscount = quote ? appliedWelcomeDiscount(quote) : 0;
   const addOnPaise = quote?.offer.selectedModifiers?.reduce((total, option) => total + option.pricePaise, 0) ?? 0;
 
   // Compute trade-off deltas if there are 2 offers (Offer A vs Offer B)
@@ -51,7 +53,7 @@ export function SandboxCommerce({
     <div className="sandbox-commerce-zone">
       {/* OFFER COMPARISON (Core Moment: Offer A vs Offer B) */}
       {offers.length > 0 && !quote && (
-        <section aria-label="Sandbox comparison" className="sandbox-comparison-section">
+        <section aria-label="Offer comparison" className="sandbox-comparison-section">
           <div className="comparison-headline">
             <span className="comparison-badge">
               <span>Simulated Offer Comparison</span>
@@ -169,7 +171,7 @@ export function SandboxCommerce({
             <div className="flex items-center gap-2">
               <ShieldCheck size={18} className="text-orange-600" aria-hidden="true" />
               <h3 className="display-feature">
-                {quote.approvedAt ? "Jugaad Pay · Complete Authorization" : "Review Exact Sandbox Quote"}
+                {quote.approvedAt ? "Jugaad Pay · Complete Authorization" : "Review exact quote"}
               </h3>
             </div>
             <p className="meta muted">
@@ -187,6 +189,12 @@ export function SandboxCommerce({
             })}
           </fieldset>)}
 
+          {quote.welcomeOffer?.status === "available" && !quote.approvedAt && <div className="recovery-addons">
+            <strong>Jugaad Welcome Offer</strong>
+            <p>20% off the item subtotal on your first simulated order with Jugaad One.</p>
+            <Button disabled={pending} onClick={() => void onAction({ action: "welcome_offer", quoteId: quote.id, accept: true })}>Apply JUGAAD20</Button>
+            <Button variant="quiet" disabled={pending} onClick={() => void onAction({ action: "welcome_offer", quoteId: quote.id, accept: false })}>Decline</Button>
+          </div>}
           <dl className="quote-breakdown-grid">
             <div className="breakdown-row">
               <dt>Items ({quote.offer.quantity}x)</dt>
@@ -202,8 +210,9 @@ export function SandboxCommerce({
             </div>
             <div className="breakdown-row">
               <dt>Taxes & packaging</dt>
-              <dd>{formatPaise(quote.offer.totalPaise - quote.offer.listing.deliveryPaise - (quote.offer.listing.pricePaise + addOnPaise) * quote.offer.quantity)}</dd>
+              <dd>{formatPaise(quote.offer.totalPaise + welcomeDiscount - quote.offer.listing.deliveryPaise - (quote.offer.listing.pricePaise + addOnPaise) * quote.offer.quantity)}</dd>
             </div>
+            {welcomeDiscount > 0 && <div className="breakdown-row"><dt>Welcome offer</dt><dd>−{formatPaise(welcomeDiscount)}</dd></div>}
             <div className="breakdown-row breakdown-row--total">
               <dt>{quote.approvedAt ? "Approved total" : "Total to approve"}</dt>
               <dd className="total-highlight">{formatPaise(quote.offer.totalPaise)}</dd>
@@ -214,7 +223,7 @@ export function SandboxCommerce({
             <div className="approval-action-row">
               <Button
                 variant="primary"
-                disabled={pending}
+                disabled={pending || quote.welcomeOffer?.status === "available"}
                 onClick={() =>
                   void onAction({
                     action: "approve",
@@ -235,24 +244,16 @@ export function SandboxCommerce({
               </Button>
             </div>
           ) : (
-            <DemoKeypad
-              key={quote.id}
-              pending={pending}
-              totalFormatted={formatPaise(quote.offer.totalPaise)}
-              merchantName={quote.offer.listing.seller}
-              label="Authorize simulated payment"
-              onConfirm={() => void onAction({ action: "pay", quoteId: quote.id, code: demoCode })}
-              onCancel={() => void onAction({ action: "cancel", quoteId: quote.id })}
-            />
+            <Link className="btn btn-orange" href={paymentHref("jugaad", quote.id)}>Continue to Jugaad Pay</Link>
           )}
         </section>
       )}
 
       {/* CONFIRMED SANDBOX ORDERS & TRACKING */}
       {state.orders.length > 0 && (
-        <section aria-label="Sandbox orders" className="sandbox-orders-section">
+        <section aria-label="Simulated orders" className="sandbox-orders-section">
           <div className="orders-section-header">
-            <h3 className="display-feature">Your Sandbox Transactions</h3>
+            <h3 className="display-feature">Your transactions</h3>
             <span className="meta muted">Persisted in local session</span>
           </div>
 

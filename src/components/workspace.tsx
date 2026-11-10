@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowUpRight, CircleMinus, Globe, MapPin, Plus, ReceiptText, Search, SlidersHorizontal } from "lucide-react";
 import { CategoryIcon } from "./category-icon";
 import { Button, Panel } from "./ui";
@@ -15,7 +15,9 @@ import type { Profile, Session } from "@/lib/commerce/session";
 import { calculateDistanceKm, demoCities, matchGpsToDemoCity } from "@/lib/marketplace/demo-cities";
 import { confirmationAnswer } from "@/lib/dialogue/confirmation";
 import { exitAction } from "@/lib/dialogue/actions";
+import { takeEntryPermission } from "./try-jugaad";
 import { VoiceControls } from "./voice-controls";
+import { paymentHref } from "@/lib/payment";
 import { useVoicePlayback } from "./use-voice-playback";
 import { ApprovedShell, ApprovedWordmark, type WorkspaceTab } from "./approved-shell";
 import { ApprovedOrders, ApprovedProfile } from "./approved-settings";
@@ -58,7 +60,9 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
   const [checkoutError, setCheckoutError] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
   const [historyReload, setHistoryReload] = useState(0);
-  const [activeReceipt, setActiveReceipt] = useState<string | null>(null);
+  const router = useRouter();
+  const params = useSearchParams();
+  const [activeReceipt, setActiveReceipt] = useState(() => params.get("receipt"));
   const [justConfirmedProvider, setJustConfirmedProvider] = useState<string>();
   const [finalTranscript, setFinalTranscript] = useState("");
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
@@ -83,11 +87,22 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
   const [userName, setUserName] = useState("");
   const [cityName, setCityName] = useState("");
   const onboardingCommit = useRef(false);
+  const locationPrompt = useRef<AbortController | null>(null);
   const [onboardingBusy, setOnboardingBusy] = useState(false);
-  const [onboardingCity, setOnboardingCity] = useState<NonNullable<Profile["region"]>>("hyderabad");
+  const [onboardingCity, setOnboardingCity] = useState<NonNullable<Profile["region"]> | "">("");
+  const [confirmedLocation, setConfirmedLocation] = useState<Pick<Profile, "region" | "location" | "locality">>();
+  const [entryPermission, setEntryPermission] = useState<"pending" | "granted" | "denied">();
+  const entryRequest = useRef<Promise<boolean> | undefined>(undefined);
+  useEffect(() => {
+    entryRequest.current ??= takeEntryPermission();
+    if (!entryRequest.current) return;
+    let mounted = true;
+    setEntryPermission("pending");
+    void entryRequest.current.then((allowed) => { if (mounted) setEntryPermission(allowed ? "granted" : "denied"); });
+    return () => { mounted = false; };
+  }, []);
   const [sessionError, setSessionError] = useState("");
   const [sessionLoaded, setSessionLoaded] = useState(false);
-  const params = useSearchParams();
   const requestedTab = params.get("tab");
   const tab: WorkspaceTab = requestedTab === "orders" || requestedTab === "profile" ? requestedTab : "jugaad";
   const transcriptLanguage = useRef<VoiceLocale | null>(null);
@@ -164,7 +179,10 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
     );
     return () => controller.abort();
   }, [historyReload]);
-  useEffect(() => () => interpretationRequest.current?.abort(), []);
+  useEffect(() => () => {
+    interpretationRequest.current?.abort();
+    locationPrompt.current?.abort();
+  }, []);
 
   async function saveProfile(value: Profile, signal?: AbortSignal) {
     await postJson("/api/commerce", { action: "profile", profile: value }, signal);
@@ -178,6 +196,7 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
 
   async function sayPrompt(prompt: string, language: VoiceLocale, signal?: AbortSignal, name?: string, waitForEnd = false) {
     const reply = await postJson<{ text: string; speechTicket?: string }>("/api/voice/greeting", { prompt, language, ...(name ? { name } : {}) }, signal);
+    if (signal?.aborted) return;
     setLocationFeedback(reply.text);
     if (reply.speechTicket && !playback.muted) {
       await playback.play({ kind: "reply", ticket: reply.speechTicket }, { text: reply.text, language }, signal);
@@ -186,7 +205,17 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
   }
 
   async function chooseRegion(region: NonNullable<Profile["region"]>, signal?: AbortSignal, language = voiceLanguage, location?: FoodLocation, locality?: string) {
-    if (!profile || signal?.aborted || onboardingCommit.current) return;
+    if (signal?.aborted || onboardingCommit.current) return;
+    ++locationRequest.current;
+    if (!profile) {
+      setConfirmedLocation({ region, location: location ?? { source: "manual", cityId: region }, locality });
+      setCandidateLocation(undefined);
+      setCandidateRegion(undefined);
+      setLocationFeedback("");
+      setOnboardingStage("language");
+      if (signal) await sayPrompt("language_preference", "en-IN", signal, undefined, true);
+      return;
+    }
     onboardingCommit.current = true;
     try {
       await saveProfile({ ...profile, region, location: location ?? { source: "manual", cityId: region }, locality });
@@ -205,10 +234,15 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
     await sayPrompt("ready", language, signal, undefined, Boolean(signal));
   }
 
-  function locateRegion() {
-    if (!navigator.geolocation) { setLocationFeedback("Choose a demo city to continue."); return; }
+  const locationRequest = useRef(0);
+
+  const locateRegion = useCallback((signal?: AbortSignal) => {
+    const request = ++locationRequest.current;
+    const current = () => !signal?.aborted && request === locationRequest.current;
+    if (!navigator.geolocation) { setLocationFeedback("Device location is unavailable. Choose a city to continue."); return; }
     setLocationFeedback("Checking your device location…");
     navigator.geolocation.getCurrentPosition(async ({ coords, timestamp }) => {
+      if (!current()) return;
       if (coords.accuracy > 2500 || Date.now() - timestamp > 60_000) {
         setLocationFeedback("The device location was too approximate. Choose a demo city.");
         return;
@@ -226,13 +260,23 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
         const nearest = city?.neighborhoods.map((entry) => ({ entry, km: calculateDistanceKm(coords.latitude, coords.longitude, entry.coordinates.latitude, entry.coordinates.longitude) })).sort((a, b) => a.km - b.km)[0];
         if (nearest && nearest.km + coords.accuracy / 1000 <= 4) locality = nearest.entry.name;
       } catch { /* A city can still be confirmed when the neighborhood directory is unavailable. */ }
+      if (!current()) return;
       const label = locality ? `${locality}, ${match.matchedCity.name}` : match.matchedCity.name;
       setCandidateRegion(match.matchedCity.id);
       setCandidateLocation({ location: { source: "gps", coordinates }, accuracy: Math.round(coords.accuracy), label, locality });
       setOnboardingStage("confirm-region");
-      void sayPrompt("confirm_region", voiceLanguage, undefined, label).catch(() => setLocationFeedback(`Use the location near ${label}?`));
-    }, () => setLocationFeedback("Location access was unavailable. Choose a demo city."), { enableHighAccuracy: true, maximumAge: 0, timeout: 10_000 });
-  }
+      setLocationFeedback(`Use the location near ${label}?`);
+    }, () => { if (current()) setLocationFeedback("Location access was unavailable. Try again or choose a city."); }, { enableHighAccuracy: true, maximumAge: 0, timeout: 10_000 });
+  }, []);
+
+  useEffect(() => {
+    if (!sessionLoaded || sessionError || onboardingStage !== "permission" || entryPermission !== "granted") return;
+    const scheduled = requestAnimationFrame(() => {
+      setOnboardingStage("region");
+      locateRegion();
+    });
+    return () => cancelAnimationFrame(scheduled);
+  }, [sessionLoaded, sessionError, onboardingStage, entryPermission, locateRegion]);
 
   const updateTransaction = useCallback((transaction: FoodTransaction) => {
     setCheckout((current) => {
@@ -304,11 +348,16 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
       if (signal?.aborted) return;
       if (input.action === "pay" && result.orders[0] && !sandbox.orders.some(({ reference }) => reference === result.orders[0].reference)) setCurrentSandboxOrder(result.orders[0].reference);
       setSandbox(result);
+      if (input.action === "approve" && result.quote?.approvedAt) {
+        playback.stop();
+        router.push(paymentHref("jugaad", result.quote.id));
+        return;
+      }
       if (result.speechTicket && result.speech && voiceAvailable && !playback.muted) {
         await playback.play({ kind: "reply", ticket: result.speechTicket }, { text: result.speech, language }, signal);
       }
     } catch (error) {
-      if (!signal?.aborted) setInterpretationError(error instanceof Error ? error.message : "The sandbox checkout could not continue.");
+      if (!signal?.aborted) setInterpretationError(error instanceof Error ? error.message : "Checkout could not continue.");
     } finally {
       commerceBusy.current = false;
       setCommercePending(false);
@@ -316,13 +365,21 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
   }
 
   async function startVoice(signal: AbortSignal) {
-    if (onboardingStage === "permission" || onboardingStage === "language" || onboardingStage === "confirm-language") {
+    locationPrompt.current?.abort();
+    if (onboardingStage === "permission") {
+      setOnboardingStage("region");
+      locateRegion(signal);
+      return;
+    }
+    if (onboardingStage === "language" || onboardingStage === "confirm-language") {
       if (onboardingStage === "confirm-language" && candidateLanguage) {
         await sayPrompt("confirm_language", "en-IN", signal, voiceLanguages[candidateLanguage].label, true);
       } else {
         setOnboardingStage("language");
         await sayPrompt("language_preference", "en-IN", signal, undefined, true);
       }
+    } else if (onboardingStage === "region" || onboardingStage === "confirm-region") {
+      await sayPrompt(candidateLocation ? "confirm_region" : "location", voiceLanguage, signal, candidateLocation?.label, true);
     } else if (profile) {
       setOnboardingStage(profile.region ? "ready" : "region");
       await sayPrompt(profile.region ? "returning" : "location", voiceLanguage, signal, profile.region ? profile.name : undefined, true);
@@ -333,6 +390,7 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
 
   async function acceptOnboardingLanguage(language: VoiceLocale, signal?: AbortSignal) {
     if (signal?.aborted) return;
+    locationPrompt.current?.abort();
     transcriptLanguage.current = null;
     changeLanguage(language);
     sessionStorage.setItem("jugaad-onboarding-locale", language);
@@ -393,12 +451,14 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
         if (signal.aborted || onboardingCommit.current) return;
         onboardingCommit.current = true;
         try {
-          await saveProfile({ ...profile, name: candidateName, language: voiceLanguage });
+          await saveProfile({ ...profile, ...confirmedLocation, name: candidateName, language: voiceLanguage }, signal);
         } finally {
           onboardingCommit.current = false;
         }
-        setOnboardingStage(profile?.region ? "ready" : "region");
-        await sayPrompt(profile?.region ? "returning" : "intro_location", voiceLanguage, signal, candidateName, true);
+        const hasRegion = Boolean(profile?.region || confirmedLocation?.region);
+        if (hasRegion) setCapturingVoice(false);
+        setOnboardingStage(hasRegion ? "ready" : "region");
+        await sayPrompt(hasRegion ? "returning" : "intro_location", voiceLanguage, signal, candidateName, true);
         setDraft((value) => ({ ...value, text: "" }));
         return;
       }
@@ -444,7 +504,7 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
       setVoiceEpoch((value) => value + 1);
       setCapturingVoice(false);
       voiceSession.current = false;
-      setOnboardingStage(profile ? (profile.region ? "ready" : "region") : "language");
+      if (profile) setOnboardingStage(profile.region ? "ready" : "region");
       setConversation([]);
       setFinalTranscript("");
       setRestoredTurn(undefined);
@@ -465,10 +525,15 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
       const started = performance.now();
       const result = await postJson<FoodTurn>("/api/agent/interpret", {
         text, turnId, current: justConfirmedProvider || currentSandboxOrder ? {} : latestTurn?.constraints ?? restoredIntent ?? {}, location: foodLocation ?? undefined,
-        voiceLanguage: spoken ?? voiceLanguage,
+        voiceLanguage: spoken ?? voiceLanguage, paymentPage: true,
         recentRequests: conversation.filter(({ response }) => response.intent !== "other").slice(-4).map((entry) => entry.text.slice(0, 300)),
       }, signal);
       if (signal.aborted) return;
+      if (result.paymentPath) {
+        playback.stop();
+        router.push(result.paymentPath);
+        return "stop" as const;
+      }
       transcriptLanguage.current = null;
       if (spoken && !exit) voiceSession.current = true;
       if (result.voiceControl === "stop" && exit !== "stop") {
@@ -640,7 +705,7 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
     onStarted={startVoice}
     onCapture={setCapturingVoice}
     playback={playback}
-    disabled={false}
+    disabled={entryPermission === "pending"}
     agentResponding={interpretationPending}
     compact={onboardingStage !== "ready"}
     compactPrompt={onboardingStage === "permission" ? "Enable your microphone" : onboardingStage === "language" || onboardingStage === "confirm-language" ? "Say your language" : onboardingStage === "region" || onboardingStage === "confirm-region" ? "Say your city" : "Say your name"}
@@ -652,17 +717,19 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
   </main>;
 
   if (onboardingStage !== "ready") {
-    const step = ["permission", "language", "confirm-language"].includes(onboardingStage) ? 1 : onboardingStage === "name" || onboardingStage === "confirm-name" ? 2 : 3;
+    const step = onboardingStage === "permission" ? 1 : onboardingStage === "region" || onboardingStage === "confirm-region" ? 2 : onboardingStage === "language" || onboardingStage === "confirm-language" ? 3 : 4;
     return <main id="main" className="onboarding">
       <header className="onboard-header"><ApprovedWordmark /><span className="small-tag">Getting to know you</span></header>
       <div className="onboard-content">
-        <div className="onboard-progress" aria-hidden="true">{[1, 2, 3].map((item) => <span key={item} className={step >= item ? "progress-on" : ""} />)}</div>
+        <div className="onboard-progress" aria-hidden="true">{[1, 2, 3, 4].map((item) => <span key={item} className={step >= item ? "progress-on" : ""} />)}</div>
         <div className="onboard-step">
-          <div className="eyebrow"><span className="eyebrow-line" /> Step 0{step} / 03</div>
+          <div className="eyebrow"><span className="eyebrow-line" /> Step 0{step} / 04</div>
           {onboardingStage === "permission" ? <>
-            <h2>Enable your<br /><em>microphone.</em></h2><p>Allow microphone access to speak with Jugaad. You can also continue with text.</p>
-            <button className="btn btn-dark btn-wide" type="button" onClick={() => setOnboardingStage("language")}>Continue with text <span>→</span></button>
-          </> : step === 1 ? <>
+            <h2>Enable your<br /><em>microphone.</em></h2><p>Allow microphone access to speak with Jugaad.</p>
+            {entryPermission === "pending" && <p role="status">Waiting for microphone permission…</p>}
+            {entryPermission === "denied" && <p role="alert">Microphone access is unavailable. Check this site’s permissions in your browser and try again.</p>}
+            <button className="btn btn-dark btn-wide" type="button" disabled={entryPermission === "pending"} onClick={() => setOnboardingStage("region")}>Continue with text <span>→</span></button>
+          </> : step === 3 ? <>
             <h2>Let’s speak<br /><em>your language.</em></h2><p>Pick the language that feels most natural. You can change it later.</p>
             <div className="language-grid">{Object.entries(voiceLanguages).map(([id, { label, script }], index) => <button
               key={id} type="button" className={(candidateLanguage ?? voiceLanguage) === id ? "language-card selected" : "language-card"}
@@ -673,17 +740,18 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
               playback.prime();
               void acceptOnboardingLanguage(candidateLanguage ?? voiceLanguage).catch(() => setLocationFeedback("The voice prompt is unavailable. You can type your name."));
             }}>Continue <span>→</span></button>
-          </> : step === 2 ? <>
+          </> : step === 4 ? <>
             <h2>What should<br /><em>I call you?</em></h2><p>Say your name or type it below. No account is needed.</p>
             <form onSubmit={(event) => {
               event.preventDefault();
               if (onboardingBusy) return;
               setOnboardingBusy(true);
               const name = (onboardingStage === "confirm-name" ? candidateName : draft.text).trim();
-              void saveProfile({ name, language: voiceLanguage }).then(() => {
-                setOnboardingStage("region");
+              void saveProfile({ ...confirmedLocation, name, language: voiceLanguage }).then(() => {
+                if (confirmedLocation?.region) setCapturingVoice(false);
+                setOnboardingStage(confirmedLocation?.region ? "ready" : "region");
                 setDraft((value) => ({ ...value, text: "" }));
-                void sayPrompt("intro_location", voiceLanguage, undefined, name).catch(() => {});
+                void sayPrompt(confirmedLocation?.region ? "returning" : "intro_location", voiceLanguage, undefined, name).catch(() => {});
               }).catch((error: Error) => setLocationFeedback(error.message)).finally(() => setOnboardingBusy(false));
             }}>
               <label className="field-label" htmlFor="onboard-name">{onboardingStage === "confirm-name" ? "Confirm your name" : "Your name"}</label>
@@ -694,17 +762,29 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
               <button className="btn btn-dark btn-wide" disabled={onboardingBusy} type="submit">Continue <span>→</span></button>
             </form>
           </> : <>
-            <h2>Where should<br /><em>we look?</em></h2><p>Choose a sandbox service city. Device location is optional.</p>
-            <label className="field-label" htmlFor="onboard-city">Sandbox service city</label>
-            <select className="onboard-input" id="onboard-city" value={onboardingCity} onChange={(event) => { setOnboardingCity(event.target.value as typeof onboardingCity); setCandidateLocation(undefined); setCandidateRegion(undefined); setOnboardingStage("region"); }}>
+            <h2>Where should<br /><em>we look?</em></h2><p>Jugaad uses your location to check available offers and delivery estimates.</p>
+            <label className="field-label" htmlFor="onboard-city">Service city</label>
+            <select className="onboard-input" id="onboard-city" value={onboardingCity} onChange={(event) => { ++locationRequest.current; setOnboardingCity(event.target.value as typeof onboardingCity); setCandidateLocation(undefined); setCandidateRegion(undefined); setOnboardingStage("region"); }}>
+              <option value="">Choose a city</option>
               {Object.values(demoCities).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
             </select>
-            <button className="location-optional" type="button" onClick={locateRegion}><MapPin size={16} /> Use device location (optional)</button>
-            <button className="btn btn-orange btn-wide" disabled={onboardingBusy} type="button" onClick={() => {
+            <button className="location-optional" type="button" onClick={() => locateRegion()}><MapPin size={16} /> Use device location</button>
+            <button className="btn btn-orange btn-wide" disabled={onboardingBusy || !(candidateRegion || onboardingCity)} type="button" onClick={() => {
+              const region = candidateRegion || onboardingCity;
+              if (!region) return;
               setOnboardingBusy(true);
-              void chooseRegion(candidateLocation && candidateRegion ? candidateRegion : onboardingCity, undefined, voiceLanguage, candidateLocation?.location, candidateLocation?.locality)
+              if (!profile && entryPermission === "granted") playback.prime();
+              void chooseRegion(region, undefined, voiceLanguage, candidateLocation?.location, candidateLocation?.locality)
+                .then(() => {
+                  if (!profile && (capturingVoice || entryPermission === "granted")) {
+                    locationPrompt.current?.abort();
+                    const controller = new AbortController();
+                    locationPrompt.current = controller;
+                    void sayPrompt("language_preference", "en-IN", controller.signal).catch(() => {});
+                  }
+                })
                 .catch((error: Error) => setLocationFeedback(error.message)).finally(() => setOnboardingBusy(false));
-            }}>{candidateLocation ? `Use ${candidateLocation.label}` : "Start with Jugaad"} <span>↗</span></button>
+            }}>{candidateLocation ? `Use ${candidateLocation.label}` : profile ? "Start with Jugaad" : "Confirm city"} <span>↗</span></button>
           </>}
           {voice}
           {locationFeedback && <p className="geo-message" role="status">{locationFeedback}</p>}
@@ -724,7 +804,7 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
             <p>Ask naturally. I’ll help you make sense of the options.</p></div>
           <button className="outline-action" type="button" disabled={commercePending} onClick={() => void resetConversation()}><Plus size={15} aria-hidden="true" /> New conversation</button>
         </div>
-        <div className="jugaad-stage">
+        <div className="jugaad-stage" data-turn-pending={interpretationPending || undefined}>
         <div className="agent-layout">
           <div className="agent-main-card">{voice || <div className="approved-order-status"><h2>Voice unavailable</h2><p>You can still type below.</p></div>}</div>
           <div className="agent-side">
@@ -735,7 +815,7 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
               <button className="inline-link" type="button" onClick={() => switchTab("profile")}>Edit preferences ↗</button>
             </div>
             <div className="side-card providers-card">
-              <div className="side-card-heading"><span>Connected providers</span><span className="small-sandbox">Sandbox</span></div>
+              <div className="side-card-heading"><span>Connected providers</span><span className="small-sandbox">Simulated</span></div>
               {["Wiggy", "Tomato"].map((name) => <div key={name} className="provider-row"><span className={`provider-symbol ${name === "Wiggy" ? "wiggy-symbol" : "tomato-symbol"}`} aria-hidden="true">{name === "Wiggy" ? "◒" : "◉"}</span><span>{name}</span><span className="provider-note">Fictional</span></div>)}
               <p className="side-footnote">Quotes and orders are simulated.</p>
             </div>
@@ -746,8 +826,9 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
           <div className="conversation-header"><span>Conversation</span><span>{conversation.length * 2} messages</span></div>
           <div className="conversation-messages" ref={transcriptRegion}>
             {capturingVoice && <p className="workspace-help">Microphone active · finalized speech appears here</p>}
+            {interpretationPending && draft.text && <p className="approved-final-transcript"><strong>Current request</strong> {draft.text}</p>}
             {finalTranscript && <p className="approved-final-transcript"><strong>Latest transcript</strong> {finalTranscript}</p>}
-            {conversation.length ? <FoodConversationLog entries={conversation} onSpeak={voiceAvailable && !capturingVoice ? speakReply : undefined} /> : <p className="conversation-empty">Your conversation starts here. Ask a question, or try a sandbox comparison.</p>}
+            {conversation.length ? <FoodConversationLog entries={conversation} onSpeak={voiceAvailable && !capturingVoice ? speakReply : undefined} /> : <p className="conversation-empty">Ask a question or tell me what you’d like to compare.</p>}
           </div>
         </div>
           <div id="offer-comparison" className="recovery-scenes" hidden={!manualOpen && !selectedOffer && !sandbox.quote && !sandbox.offers.length && !currentSandboxOrder && !justConfirmedProvider && !latestTurn?.comparison}>
@@ -764,10 +845,10 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
             {(sandbox.offers.length > 0 || sandbox.quote || sandbox.orders.some(({ reference }) => reference === currentSandboxOrder)) && <SandboxCommerce state={{ ...sandbox, orders: sandbox.orders.filter(({ reference }) => reference === currentSandboxOrder) }} onAction={actOnCommerce} pending={commercePending || interpretationPending} />}
             {foodActive && !sandbox.offers.length && (manualOpen || (latestTurn?.comparison && !justConfirmedProvider)) ? <FoodDiscovery filters={foodFilters} onFilters={(filters) => { setFoodFilters(filters); setSelectedOffer(null); }} location={foodLocation} budget={draft.budget} radius={draft.distance} priority={draft.priority} showFilters={manualOpen} conversationComparison={justConfirmedProvider ? undefined : latestTurn?.comparison} onSelect={(offer) => { setVoiceQuote(undefined); setSelectedOffer(offer); }} /> :
               !foodActive && <div className="comparison-empty"><CategoryIcon kind="rides" /><h3>No ride offers yet</h3><p>Ride providers are not connected.</p></div>}
-            {manualOpen && <><h3 className="comparison-label">{category === "food" ? "Food providers" : category === "rides" ? "Ride providers" : "Sandbox providers"}</h3>
+            {manualOpen && <><h3 className="comparison-label">{category === "food" ? "Food providers" : category === "rides" ? "Ride providers" : "Providers"}</h3>
             <ul className="workspace-provider-list" aria-label="Provider connections">
               {relevantProviders.map(({ id, name, status }) => <li key={id}>
-                <div><strong>{name}</strong><p>Fictional sandbox provider</p></div>
+                <div><strong>{name}</strong><p>Fictional provider</p></div>
                 <span className="connection-status">{status === "discovery_available" ? <><Search size={15} aria-hidden="true" /> Food search</> : <><CircleMinus size={15} aria-hidden="true" /> Not connected</>}</span>
               </li>)}
             </ul></>}

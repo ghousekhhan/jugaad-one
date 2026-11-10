@@ -10,8 +10,8 @@ import { exampleRequest } from "@/lib/request";
 
 const stages = [
   { label: "Request", icon: Mic, title: "What can Jugaad get done for you?", description: "A sample request with a budget, a search radius and a delivery preference." },
-  { label: "Compare", icon: ListFilter, title: "Compare the whole offer.", description: "In the workspace, Wiggy and Tomato return sandbox quotes with delivery estimates, fees and taxes." },
-  { label: "Approve", icon: Wallet, title: "Give the go-ahead.", description: "Review the itemized total before authorizing a sandbox payment. Checkout requires a provider quote." },
+  { label: "Compare", icon: ListFilter, title: "Compare the whole offer.", description: "In the workspace, Wiggy and Tomato return quotes with delivery estimates, fees and taxes." },
+  { label: "Approve", icon: Wallet, title: "Give the go-ahead.", description: "Review the itemized total before authorizing a simulated payment. Checkout requires a provider quote." },
   { label: "Receipt", icon: ReceiptText, title: "Keep a record of the booking.", description: "A receipt will appear here after the backend confirms a simulated payment and provider booking." },
 ] satisfies Array<{ label: string; icon: LucideIcon; title: string; description: string }>;
 

@@ -53,7 +53,7 @@ export function discoverCommerce(session: Session, current: FoodIntent, plan: In
   const fastest = offers.reduce((best, offer) => best && best.listing.etaMinutes <= offer.listing.etaMinutes ? best : offer, offers[0]);
   const fastOption = offers.indexOf(fastest) + 1;
   const reply = !region ? cityPrompt[language] : !best ? (searchFailure === "FILTERED_BY_BUDGET" ? budgetPrompt : noOffers)[language] : ({
-    "en-IN": `I found ${offers.length} sandbox options. The first is ${best.listing.name} from ${best.listing.seller} for ${price}. Option ${fastOption} is fastest at about ${fastest.listing.etaMinutes} minutes. Which option would you like?`,
+    "en-IN": `I found ${offers.length} options. The first is ${best.listing.name} from ${best.listing.seller} for ${price}. Option ${fastOption} is fastest at about ${fastest.listing.etaMinutes} minutes. Which option would you like?`,
     "hi-IN": `${offers.length} डेमो विकल्प मिले। पहला ${best.listing.name} है, कुल ${price}। विकल्प ${fastOption} सबसे तेज़ है, लगभग ${fastest.listing.etaMinutes} मिनट। कौन सा विकल्प चुनें?`,
     "hi-en": `${offers.length} demo options mile. Pehla ${best.listing.name} hai, total ${price}. Option ${fastOption} fastest hai, lagbhag ${fastest.listing.etaMinutes} minute. Kaunsa chahiye?`,
     "te-IN": `${offers.length} డెమో ఎంపికలు దొరికాయి. మొదటి ఎంపిక ${best.listing.name}, మొత్తం ${price}. వేగమైన డెలివరీ సుమారు ${fastest.listing.etaMinutes} నిమిషాలు. ఏది కావాలి?`,

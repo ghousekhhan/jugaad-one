@@ -65,7 +65,7 @@ const stageDescriptors: Record<VisualVoiceStage, { label: string; subtext: strin
   },
   searching: {
     label: "Checking eligible offers…",
-    subtext: "Scanning live sandbox provider inventory…",
+    subtext: "Checking provider availability…",
   },
   comparing: {
     label: "Comparing final totals…",
@@ -263,7 +263,6 @@ export function VoiceControls({
     stopPlayback();
     const controller = new AbortController();
     active.current = controller;
-    onCapture(true);
     setError("");
     setState("permission");
     setLevels([]);
@@ -274,6 +273,7 @@ export function VoiceControls({
         return;
       }
       capture.current = session;
+      onCapture(true);
       setState("listening");
       timer.current = setTimeout(() => void stopManualRecording(), maxRecordingSeconds * 1000);
     } catch (failure) {
@@ -314,7 +314,6 @@ export function VoiceControls({
     stopPlayback();
     const controller = new AbortController();
     active.current = controller;
-    onCapture(true);
     setError("");
     setState("permission");
     setLevels([]);
@@ -347,6 +346,7 @@ export function VoiceControls({
         return;
       }
       capture.current = session;
+      onCapture(true);
       readyAt.current = performance.now() - start;
       if (onStarted) {
         const greeting = new AbortController();
@@ -400,7 +400,7 @@ export function VoiceControls({
       <div className="agent-bottom">
           <button
             type="button"
-            className="mic-button"
+            className={isContinuous && !isSessionActive ? "mic-button mic-start" : "mic-button"}
             onClick={() => {
               if (isContinuous) {
                 if (isSessionActive) {
@@ -422,7 +422,7 @@ export function VoiceControls({
                 ? state === "paused"
                   ? "Resume microphone"
                   : "Pause microphone"
-                : "Start voice conversation"
+                : "Start Conversation"
             }
           >
             {state === "paused" ? (
@@ -432,9 +432,10 @@ export function VoiceControls({
             ) : (
               <Mic size={20} aria-hidden="true" />
             )}
+            {isContinuous && !isSessionActive && <span>Start Conversation</span>}
           </button>
         <span>{compact ? (visualStage === "idle" ? compactPrompt : descriptor.label) : visualStage === "idle" ? "Tap to speak, or type below" : descriptor.label}</span>
-        {!compact && <span className="keyboard-symbol" aria-hidden="true">↵</span>}
+        {isSessionActive && isContinuous && <Button variant="quiet" onClick={endSession}>End voice</Button>}
       </div>
       <details className="approved-voice-settings">
         <summary>Voice controls</summary>

@@ -32,7 +32,7 @@ export function ApprovedShell({ tab, onTab, name, children }: {
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-tip"><span className="tip-icon" aria-hidden="true">✳</span><strong>One conversation.<br />Everything connected.</strong><p>Explore, compare and approve simulated transactions.</p></div>
-          <div className="sidebar-foot"><span className="status-dot" /> Simulated sandbox</div>
+          <div className="sidebar-foot"><span className="status-dot" /> Simulated transactions</div>
         </div>
       </aside>
       <div className="app-area">

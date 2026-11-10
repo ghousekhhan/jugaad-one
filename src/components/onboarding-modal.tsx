@@ -168,7 +168,7 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialProfile, v
           setSelectedCityId(match.matchedCity.id);
           setLocationStatus({
             type: "success",
-            message: `Detected device location near ${match.matchedCity.name} (~${match.distanceKm} km away). Selected for sandbox delivery.`,
+            message: `Detected device location near ${match.matchedCity.name} (~${match.distanceKm} km away). We’ll search in this city.`,
             matchedCityId: match.matchedCity.id,
             coords: actualCoords,
           });
@@ -176,7 +176,7 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialProfile, v
           setSelectedCityId("bengaluru");
           setLocationStatus({
             type: "warning",
-            message: `Your location is outside our 4 demo cities (${match.distanceKm} km from nearest). We've set your sandbox location to Bengaluru, or you can pick another demo city below.`,
+            message: `Your location is outside our 4 demo cities (${match.distanceKm} km from nearest). We’ve selected Bengaluru. You can choose a different city below.`,
             matchedCityId: "bengaluru",
             coords: actualCoords,
           });
@@ -421,7 +421,7 @@ export function OnboardingModal({ isOpen, onComplete, onClose, initialProfile, v
 
             <div className="demo-city-picker">
               <label className="field-label-small">
-                Supported demo sandbox cities:
+                Supported cities:
               </label>
               <div className="demo-city-grid" role="radiogroup" aria-label="Demo city selection">
                 {Object.values(demoCities).map((city) => {

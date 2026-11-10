@@ -6,7 +6,7 @@ import { spokenPrice } from "../voice/replies";
 import type { VoiceLocale } from "../voice/types";
 import { readSession, updateSession } from "./session";
 import { totalFor } from "./catalog";
-import { demoCode, trackingStage, type CommerceAction, type SandboxQuote, type SandboxOrder } from "./types";
+import { appliedWelcomeDiscount, demoCode, trackingStage, type CommerceAction, type SandboxQuote, type SandboxOrder } from "./types";
 
 export async function bookCommerce(owner: string, input: CommerceAction, expectedSearchId?: string, expectedTotalPaise?: number) {
   if (input.action === "status") return { session: await readSession(owner), order: undefined };
@@ -15,7 +15,10 @@ export async function bookCommerce(owner: string, input: CommerceAction, expecte
     if (input.action === "select") {
       const offer = current.offers.find(({ listing }) => listing.id === input.listingId);
       if (!offer) throw new MarketplaceError("TRANSACTION_NOT_FOUND", 404);
-      const quote = { id: randomUUID(), offer, expiresAt: Date.now() + 10 * 60_000 };
+      const discountPaise = Math.round(offer.listing.pricePaise * offer.quantity * 0.2);
+      const welcomeOffer = current.orders.length === 0 && discountPaise > 0 && discountPaise < offer.totalPaise
+        ? { status: "available" as const, discountPaise } : undefined;
+      const quote = { id: randomUUID(), offer, expiresAt: Date.now() + 10 * 60_000, welcomeOffer };
       return { ...current, quote };
     }
     if (input.action === "pay" && current.orders.some(({ quote }) => quote.id === input.quoteId)) return current;
@@ -23,13 +26,26 @@ export async function bookCommerce(owner: string, input: CommerceAction, expecte
     if (!quote || quote.id !== input.quoteId) throw new MarketplaceError("TRANSACTION_NOT_FOUND", 404);
     if (input.action === "cancel") return { ...current, quote: undefined };
     if (quote.expiresAt <= Date.now()) throw new MarketplaceError("QUOTE_EXPIRED", 410);
+    if (input.action === "welcome_offer") {
+      const welcomeOffer = quote.welcomeOffer;
+      if (current.orders.length || quote.approvedAt || welcomeOffer?.status !== "available") {
+        throw new MarketplaceError("COMMERCE_CONFLICT", 409);
+      }
+      const next = {
+        ...quote,
+        id: randomUUID(),
+        welcomeOffer: { ...welcomeOffer, status: input.accept ? "applied" as const : "declined" as const },
+        offer: input.accept ? { ...quote.offer, totalPaise: quote.offer.totalPaise - welcomeOffer.discountPaise } : quote.offer,
+      };
+      return { ...current, quote: next, dialogue: current.dialogue && { ...current.dialogue, confirmation: undefined, awaitingApproval: next.id } };
+    }
     if (input.action === "customize") {
       const modifier = quote.offer.listing.modifiers?.flatMap((g) => g.options).find((opt) => opt.id === input.modifierId || opt.name.toLowerCase() === input.modifierId.toLowerCase());
       if (!modifier) throw new MarketplaceError("ITEM_UNAVAILABLE", 400);
       const existing = quote.offer.selectedModifiers ?? [];
       if (existing.some(({ id }) => id === modifier.id)) return current;
       const updatedModifiers = [...existing, modifier];
-      const newTotal = totalFor(quote.offer.listing, quote.offer.quantity, updatedModifiers);
+      const newTotal = totalFor(quote.offer.listing, quote.offer.quantity, updatedModifiers) - appliedWelcomeDiscount(quote);
       const budget = current.current ?? current.dialogue?.task?.turn.constraints;
       if (budget?.budgetPaise !== undefined && (budget.budgetExclusive ? newTotal >= budget.budgetPaise : newTotal > budget.budgetPaise)) {
         throw new MarketplaceError("OVER_BUDGET", 409);
@@ -39,9 +55,12 @@ export async function bookCommerce(owner: string, input: CommerceAction, expecte
     }
     if (input.action === "approve") {
       if (quote.offer.totalPaise !== input.totalPaise) throw new MarketplaceError("PRICE_CHANGED", 409);
-      return { ...current, quote: { ...quote, approvedAt: quote.approvedAt ?? Date.now() } };
+      const welcomeOffer = quote.welcomeOffer?.status === "available"
+        ? { ...quote.welcomeOffer, status: "declined" as const } : quote.welcomeOffer;
+      return { ...current, quote: { ...quote, welcomeOffer, approvedAt: quote.approvedAt ?? Date.now() } };
     }
-    if (expectedTotalPaise !== undefined && quote.offer.totalPaise !== expectedTotalPaise) throw new MarketplaceError("PRICE_CHANGED", 409);
+    const approvedTotal = expectedTotalPaise ?? input.totalPaise;
+    if (approvedTotal !== undefined && quote.offer.totalPaise !== approvedTotal) throw new MarketplaceError("PRICE_CHANGED", 409);
     if (!quote.approvedAt || input.code !== demoCode) throw new MarketplaceError("COMMERCE_APPROVAL_REQUIRED", 409);
     const order = { reference: `JG-${randomUUID().replaceAll("-", "").slice(0, 16).toUpperCase()}`, quote, confirmedAt: Date.now(), destination: current.profile?.region === quote.offer.listing.region ? current.profile.locality : undefined, payment: "simulated_no_charge" as const };
     return { ...current, current: undefined, searchId: expectedSearchId, lastTurn: undefined, quote: undefined, offers: [],
@@ -53,7 +72,7 @@ export async function bookCommerce(owner: string, input: CommerceAction, expecte
 
 export function trackingSpeech(language: VoiceLocale, order?: SandboxOrder, providerStage?: string) {
   if (!order && !providerStage) return {
-    "en-IN": "There are no confirmed sandbox orders in this session.",
+    "en-IN": "There are no confirmed simulated orders in this session.",
     "hi-IN": "इस सेशन में कोई स्वीकार किया गया डेमो ऑर्डर नहीं है।",
     "hi-en": "Is session mein koi confirmed demo order nahi hai.",
     "te-IN": "ఈ సెషన్‌లో నిర్ధారించిన డెమో ఆర్డర్లు లేవు.",
@@ -80,6 +99,16 @@ export function trackingSpeech(language: VoiceLocale, order?: SandboxOrder, prov
     "hi-IN": `आपका आख़िरी डेमो ऑर्डर ${localized}।`,
     "hi-en": `Aapka latest demo order ${localized.toLowerCase()} hai.`,
     "te-IN": `మీ చివరి డెమో ఆర్డర్ ${localized}.`,
+  }[language];
+}
+
+export function welcomeOfferSpeech(language: VoiceLocale, quote?: SandboxQuote) {
+  if (quote?.welcomeOffer?.status !== "available") return;
+  return {
+    "en-IN": "The Jugaad Welcome Offer takes 20 percent off your item subtotal for this simulated order. Apply it?",
+    "hi-IN": "जुगाड़ वेलकम ऑफ़र में इस डेमो ऑर्डर के सामान पर 20 प्रतिशत की छूट है। इसे लागू करूँ?",
+    "hi-en": "Jugaad Welcome Offer se is demo order ke items par 20 percent off milega. Apply karoon?",
+    "te-IN": "జుగాడ్ వెల్కమ్ ఆఫర్‌తో ఈ డెమో ఆర్డర్‌లో వస్తువులపై 20 శాతం తగ్గింపు. వర్తింపజేయాలా?",
   }[language];
 }
 

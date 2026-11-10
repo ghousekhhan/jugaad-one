@@ -96,7 +96,7 @@ export function SimulatedPaymentScreen({
                   Secure Simulated Payment
                 </h3>
                 <p className="text-xs text-[#5D5953]">
-                  Jugaad Pay Demo • Sandbox environment
+                  Jugaad Pay · Simulated payment
                 </p>
               </div>
             </div>
@@ -255,7 +255,7 @@ export function SimulatedPaymentScreen({
             <div>
               <h3 className="font-bold text-sm text-[#1F1F1F] mb-1">100% Safe &amp; Simulated</h3>
               <p className="text-xs text-[#5D5953] leading-relaxed">
-                Your payment is sandbox-authorized with cryptographic verification and demo code protection.
+                Jugaad Pay uses a demo code to authorize this simulated payment.
               </p>
             </div>
           </div>

@@ -47,11 +47,17 @@
 .pay-receipt { width: min(100%, 430px); text-align: left; }
 .pay-done { color: #315e4a; font-weight: 750; }
 .pay-spinner { width: 90px; height: 90px; margin-bottom: 12px; border: 5px solid #f1e4da; border-top-color: #b6411a; border-radius: 50%; animation: pay-spin 1s linear infinite; }
-.pay-confirmation-mark { margin-bottom: 8px; }
+.pay-confirmation-visual { position: relative; display: grid; place-items: center; margin-bottom: 8px; }
+.pay-confirmation-visual .pay-spinner-exit {
+  position: absolute;
+  margin: 0;
+  animation: pay-contract 160ms ease-in both;
+}
+@keyframes pay-contract { to { opacity: 0; transform: rotate(75deg) scale(.25); } }
 .pay-confirmation-mark circle { fill: #e8f4eb; stroke: #287053; stroke-width: 2px; }
 .pay-confirmation-mark path { fill: none; stroke: #287053; stroke-width: 7px; stroke-linecap: round; stroke-linejoin: round; }
-.pay-confirmation-mark[data-animate="true"] { animation: pay-arrive .52s cubic-bezier(.18,1.42,.4,1) both; }
-.pay-confirmation-mark[data-animate="true"] path { stroke-dasharray: 1; animation: pay-tick .36s .18s ease-out both; }
+.pay-confirmation-mark[data-animate="true"] { animation: pay-arrive .46s .15s cubic-bezier(.18,1.42,.4,1) both; }
+.pay-confirmation-mark[data-animate="true"] path { stroke-dasharray: 1; animation: pay-tick .30s .31s ease-out both; }
 .pay-confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
 @keyframes pay-spin { to { transform: rotate(360deg); } }
 @keyframes pay-arrive { from { opacity: 0; transform: scale(.55); } }
@@ -66,7 +72,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .pay-spinner, .pay-confirmation-mark[data-animate="true"], .pay-confirmation-mark[data-animate="true"] path { animation: none; }
-  .pay-confetti { display: none; }
+  .pay-confetti, .pay-confirmation-visual .pay-spinner-exit { display: none; }
 }
 
 .pay-mobile-summary { display: none; }
@@ -75,3 +81,5 @@
   .pay-mobile-summary strong { font-size: 27px; font-variant-numeric: tabular-nums; }
   .pay-mobile-summary span { font-size: 14px; overflow-wrap: anywhere; }
 }
+
+html[data-feedback-motion="reduce"] .pay-spinner-exit { display: none; }

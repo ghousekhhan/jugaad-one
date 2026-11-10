@@ -8,6 +8,7 @@ import { locationSchema } from "@/lib/marketplace/discovery-types";
 import { apiFailure, assertSameOrigin, enforceRateLimit, readJson } from "@/lib/marketplace/http";
 import { MarketplaceError } from "@/lib/marketplace/provider";
 import { issueSpeechTicket } from "@/lib/voice/speech-ticket";
+import { timbreModel, voiceCatalog, type VoicePreference } from "@/lib/voice/catalog";
 import { voiceLocale } from "@/lib/voice/types";
 
 const profileSchema = z.object({
@@ -20,14 +21,15 @@ const profileSchema = z.object({
   return result.isWithinSupportedRegion && result.matchedCity.id === region;
 });
 const profileAction = z.object({ action: z.literal("profile"), profile: profileSchema }).strict();
+const voiceAction = z.object({ action: z.literal("voice"), language: voiceLocale, voice: z.string().min(1).max(40) }).strict();
 const command = z.object({ input: commerceAction, language: voiceLocale }).strict();
 
 export async function GET(request: NextRequest) {
   try {
     assertSameOrigin(request);
     const { owner, issued } = commerceSession(request);
-    const { current, profile, offers, quote, orders, providerQuoteId, dialogue, expiresAt } = await readSession(owner);
-    return sessionResponse(request, issued, { current, profile, offers, quote, orders, providerQuoteId, expiresAt,
+    const { current, profile, voicePreference, offers, quote, orders, providerQuoteId, dialogue, expiresAt } = await readSession(owner);
+    return sessionResponse(request, issued, { current, profile, voicePreference, offers, quote, orders, providerQuoteId, expiresAt,
       dialogue: dialogue ? { task: dialogue.task, lastLanguage: dialogue.lastLanguage } : undefined });
   } catch (error) { return apiFailure(error); }
 }
@@ -38,16 +40,28 @@ export async function POST(request: NextRequest) {
     enforceRateLimit("commerce-actions", 32);
     const { owner, issued } = commerceSession(request);
     const body = await readJson(request);
+    const voice = voiceAction.safeParse(body);
+    if (voice.success) {
+      const { language, voice: id } = voice.data;
+      if (!voiceCatalog[language].some(({ id: candidate }) => id === candidate)) throw new MarketplaceError("VOICE_SELECTION", 400);
+      const voicePreference: VoicePreference = { language, voice: id, model: timbreModel };
+      await updateSession(owner, (state) => {
+        if (state.profile && state.profile.language !== language) throw new MarketplaceError("VOICE_SELECTION", 400);
+        return { ...state, voicePreference };
+      });
+      return sessionResponse(request, issued, { voicePreference });
+    }
     const profile = profileAction.safeParse(body);
     if (profile.success) {
       const next = await updateSession(owner, (state) => {
         const changed = JSON.stringify(state.profile?.location) !== JSON.stringify(profile.data.profile.location) ||
           state.profile?.region !== profile.data.profile.region;
-        if (!changed) return { ...state, profile: profile.data.profile };
+        const voicePreference = state.voicePreference?.language === profile.data.profile.language ? state.voicePreference : undefined;
+        if (!changed) return { ...state, profile: profile.data.profile, voicePreference };
         const dialogue = state.dialogue;
         const task = dialogue?.task;
         const current = state.current ? { ...state.current, city: undefined, neighborhood: undefined } : undefined;
-        return { ...state, profile: profile.data.profile, searchId: undefined, lastTurn: undefined, current,
+        return { ...state, profile: profile.data.profile, voicePreference, searchId: undefined, lastTurn: undefined, current,
           offers: [], quote: undefined, providerQuoteId: undefined, dialogue: dialogue && { ...dialogue, awaitingApproval: undefined, offerReply: undefined,
             task: task ? { id: task.id, turn: { ...task.turn, constraints: current ?? {}, comparison: undefined, sandbox: undefined, selectedQuoteId: undefined } } : undefined } };
       });

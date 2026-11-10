@@ -86,7 +86,7 @@ export function FoodCheckout({ selected, configured, onUpdate, voiceLanguage, on
     void perform({ action: "quote", provider: item.provider.id, branchId: item.restaurant.branchId, item: { menuItemId: item.id, quantity: count, selectedOptions: options }, search: selected.search });
   }
 
-  return <div className="food-checkout">
+  return <div className="food-checkout selected-quote">
     <p className="workspace-help">{item.provider.name} · {item.restaurant.name}</p>
     <h4>{item.name}</h4>
     <p className="meta">{transaction ? "Exact quote" : "Comparison quote"} · Expires at {localTime.format(new Date(quote.expiresAt))} IST</p>

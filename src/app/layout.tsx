@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { InteractionFeedback } from "@/components/interaction-feedback";
 import "./globals.css";
 import "./approved-ui.css";
 
@@ -18,6 +19,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className={`${display.variable} ${ui.variable} ${devanagari.variable} ${telugu.variable} ${geist.variable}`}>
       <body className="approved-ui">
+        <InteractionFeedback />
         <a className="skip-link" href="#main">Skip to content</a>
         {children}
       </body>

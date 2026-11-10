@@ -1,5 +1,7 @@
 "use client";
 
+import { playSound, primeSound, stopSound } from "@/lib/sound/engine";
+
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Mic,
@@ -171,6 +173,7 @@ export function VoiceControls({
     capture.current?.cancel();
     capture.current = null;
     stopPlayback();
+    void playSound("voice.stop");
     setState("idle");
     setError("");
     setLevels([]);
@@ -263,11 +266,12 @@ export function VoiceControls({
     stopPlayback();
     const controller = new AbortController();
     active.current = controller;
+    primeSound();
     setError("");
     setState("permission");
     setLevels([]);
     try {
-      const session = await beginVoiceCapture(controller.signal, setLevels, false);
+      const session = await beginVoiceCapture(controller.signal, setLevels, false, playSound("voice.start", controller.signal));
       if (controller.signal.aborted) {
         session.cancel();
         return;
@@ -278,9 +282,11 @@ export function VoiceControls({
       timer.current = setTimeout(() => void stopManualRecording(), maxRecordingSeconds * 1000);
     } catch (failure) {
       if (controller.signal.aborted) return;
+      controller.abort();
       active.current = null;
       onCapture(false);
       setState("error");
+      void playSound("action.error");
       const name = failure instanceof Error ? failure.name : "";
       setError(name === "NotAllowedError" ? "Microphone permission was denied." : "Microphone recording is unavailable.");
     }
@@ -295,6 +301,7 @@ export function VoiceControls({
     setState("transcribing");
     try {
       const audio = await session.finish();
+      void playSound("voice.stop");
       await handleTurnAudio(audio);
     } catch {
       setState("error");
@@ -314,6 +321,7 @@ export function VoiceControls({
     stopPlayback();
     const controller = new AbortController();
     active.current = controller;
+    primeSound();
     setError("");
     setState("permission");
     setLevels([]);
@@ -326,6 +334,7 @@ export function VoiceControls({
           onSpeechState: (vad: VadState) => {
             const current = turnHandlers.current;
             if (vad.speechSamples >= voiceSampleRate * 0.35 && vad.speaking && current.playbackStatus === "playing") {
+              stopSound();
               stopPlayback();
             }
             if (vad.speaking && current.state === "listening") {
@@ -338,7 +347,8 @@ export function VoiceControls({
             if (active.current === controller) void handleTurnAudio(turnAudio, timing);
           },
         },
-        true
+        true,
+        playSound("voice.start", controller.signal),
       );
 
       if (controller.signal.aborted) {
@@ -361,9 +371,11 @@ export function VoiceControls({
       setState("listening");
     } catch (failure) {
       if (controller.signal.aborted) return;
+      controller.abort();
       active.current = null;
       onCapture(false);
       setState("error");
+      void playSound("action.error");
       const name = failure instanceof Error ? failure.name : "";
       setError(
         name === "NotAllowedError"
@@ -384,7 +396,7 @@ export function VoiceControls({
     : visualStage === "understanding" || visualStage === "searching" || visualStage === "comparing" ? "thinking" : "idle";
 
   return (
-    <div className={compact ? "approved-voice approved-voice-compact" : "approved-voice"} data-voice-state={presentation}>
+    <div className={compact ? "approved-voice approved-voice-compact" : "approved-voice"} data-voice-state={presentation} data-capture-state={visualStage}>
       {!compact && <>
         <div className="agent-card-top"><span><span className="status-dot" /> {visualStage === "idle" ? "Ready when you are" : descriptor.label}</span><span className="agent-label">Jugaad / Voice 01</span></div>
         <div className={`agent-visual ${presentation}`} aria-hidden="true">
@@ -503,6 +515,7 @@ export function VoiceControls({
         </p>
       )}
 
+      {playback.voiceNotice && <p className="workspace-help" role="status">{playback.voiceNotice}</p>}
       {playback.notice && <p className="workspace-help" role="status">{playback.notice}</p>}
       {(playback.status !== "idle" || playback.caption) && (
         <div className="voice-playback-bar">

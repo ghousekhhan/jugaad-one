@@ -1,3 +1,4 @@
+import { holdSounds } from "../sound/engine";
 import { createVoiceActivityDetector, encodeVoiceWave, maxRecordingSeconds, minTurnSpeechSeconds, turnSilenceSeconds, voiceSampleRate, waveformLevels, type VadState } from "./wave";
 
 export type VoiceCapture = {
@@ -19,9 +20,11 @@ export async function beginVoiceCapture(
   signal: AbortSignal,
   onLevelsOrCallbacks: ((levels: number[]) => void) | VoiceCaptureCallbacks,
   continuousMode = false,
+  activation?: Promise<void>,
 ): Promise<VoiceCapture> {
   if (!navigator.mediaDevices?.getUserMedia || !window.AudioContext || !window.AudioWorkletNode) throw new Error("MIC_UNSUPPORTED");
   const context = new AudioContext({ sampleRate: voiceSampleRate });
+  let releaseSounds: (() => void) | undefined;
   let stream: MediaStream | undefined;
   let worklet: AudioWorkletNode | undefined;
   let closed = false;
@@ -35,6 +38,7 @@ export async function beginVoiceCapture(
   const close = () => {
     if (closed) return;
     closed = true;
+    releaseSounds?.();
     signal.removeEventListener("abort", close);
     stream?.getTracks().forEach((track) => track.stop());
     worklet?.port.close();
@@ -47,8 +51,9 @@ export async function beginVoiceCapture(
       if (closed) { device.getTracks().forEach((track) => track.stop()); return; }
       stream = device;
     });
-    await Promise.all([context.resume(), permission]);
+    await Promise.all([context.resume(), permission, activation]);
     signal.throwIfAborted();
+    releaseSounds = holdSounds();
     await context.audioWorklet.addModule("/voice/capture.js");
     signal.throwIfAborted();
     const source = context.createMediaStreamSource(stream!);

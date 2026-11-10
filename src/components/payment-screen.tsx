@@ -1,5 +1,7 @@
 "use client";
 
+import { playSound, primeSound } from "@/lib/sound/engine";
+
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowUpRight, ShieldCheck } from "lucide-react";
@@ -19,6 +21,8 @@ export function PaymentScreen({ payment }: { payment: PaymentDetails }) {
   const [celebrate, setCelebrate] = useState(false);
   const [message, setMessage] = useState("");
   const inFlight = useRef(false);
+  const feedback = useRef<AbortController | null>(null);
+  useEffect(() => () => feedback.current?.abort(), []);
   const playback = useVoicePlayback();
   const heading = useRef<HTMLHeadingElement>(null);
   const amount = formatPaise(payment.totalPaise);
@@ -28,10 +32,16 @@ export function PaymentScreen({ payment }: { payment: PaymentDetails }) {
   async function confirm(reconcile = false) {
     if (inFlight.current || stage !== (reconcile ? "reconcile" : "authorize")) return;
     inFlight.current = true;
+    feedback.current?.abort();
+    const controller = new AbortController();
+    feedback.current = controller;
+    primeSound();
     playback.prime();
+    void playSound("payment.processing", controller.signal);
     setStage("processing");
     setMessage("");
     try {
+      let announce: (() => void) | undefined;
       if (payment.source === "provider") {
         const transaction = await postJson<FoodTransaction>("/api/marketplace/transactions", reconcile
           ? { action: "retry", id: payment.id }
@@ -45,7 +55,7 @@ export function PaymentScreen({ payment }: { payment: PaymentDetails }) {
             transaction.quote.pricing.totalPaise !== payment.totalPaise) throw new Error("The provider hasn’t confirmed this checkout.");
         setReceipt({ id: transaction.id, reference: transaction.order.reference });
         const text = transactionSpeech(transaction, "confirmation", payment.language);
-        if (text) void playback.play({ kind: "confirmation", transactionId: transaction.id, language: payment.language }, { text, language: payment.language });
+        if (text) announce = () => { void playback.play({ kind: "confirmation", transactionId: transaction.id, language: payment.language }, { text, language: payment.language }, controller.signal); };
       } else {
         const result = await postJson<{ order?: SandboxOrder; speech?: string; speechTicket?: string }>("/api/commerce", {
           input: { action: "pay", quoteId: payment.id, totalPaise: payment.totalPaise, code: demoCode }, language: payment.language,
@@ -54,13 +64,18 @@ export function PaymentScreen({ payment }: { payment: PaymentDetails }) {
         if (!order || order.payment !== "simulated_no_charge" || order.quote.id !== payment.id ||
             order.quote.offer.totalPaise !== payment.totalPaise) throw new Error("The order could not be verified.");
         setReceipt({ id: order.reference, reference: order.reference });
-        if (result.speech && result.speechTicket) {
-          void playback.play({ kind: "reply", ticket: result.speechTicket }, { text: result.speech, language: payment.language });
+        const { speech, speechTicket } = result;
+        if (speech && speechTicket) {
+          announce = () => { void playback.play({ kind: "reply", ticket: speechTicket }, { text: speech, language: payment.language }, controller.signal); };
         }
       }
       setCelebrate(true);
       setStage("confirmed");
+      void playSound("payment.success", controller.signal).then(() => {
+        if (!controller.signal.aborted) announce?.();
+      });
     } catch (error) {
+      void playSound("action.error", controller.signal);
       setMessage(error instanceof Error ? error.message : "Check the checkout status before trying again.");
       setStage("failed");
     } finally {
@@ -102,10 +117,13 @@ export function PaymentScreen({ payment }: { payment: PaymentDetails }) {
           <h1 ref={heading} tabIndex={-1} aria-live="polite">Processing your simulated payment…</h1>
           <p>Waiting for confirmation of your order.</p>
         </> : stage === "confirmed" && receipt ? <>
-          <svg className="pay-confirmation-mark" data-animate={celebrate} width="116" height="116" viewBox="0 0 116 116" aria-hidden="true">
-            <circle cx="58" cy="58" r="54" />
-            <path d="M34 58l16 16 33-34" pathLength="1" />
-          </svg>
+          <div className="pay-confirmation-visual" aria-hidden="true">
+            {celebrate && <div className="pay-spinner pay-spinner-exit" />}
+            <svg className="pay-confirmation-mark" data-animate={celebrate} width="116" height="116" viewBox="0 0 116 116" aria-hidden="true">
+              <circle cx="58" cy="58" r="54" />
+              <path d="M34 58l16 16 33-34" pathLength="1" />
+            </svg>
+          </div>
           {celebrate && <PaymentCelebration />}
           <h1 ref={heading} tabIndex={-1}>Payment successful!</h1>
           <p>Your simulated payment has been completed.</p>
@@ -116,6 +134,7 @@ export function PaymentScreen({ payment }: { payment: PaymentDetails }) {
             <div><dt>Status</dt><dd>Confirmed</dd></div>
           </dl>
           <p className="pay-done">Jugaad Done.</p>
+          {playback.voiceNotice && <p role="status">{playback.voiceNotice}</p>}
           {playback.caption && <p className="pay-caption">{playback.caption.text}</p>}
           {playback.status === "playing" && <button className="btn btn-dark" type="button" onClick={playback.stop}>Stop audio</button>}
           <div className="pay-actions">

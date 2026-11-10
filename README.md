@@ -55,6 +55,14 @@ Voice turns use Gnani Timbre to speak the displayed reply. Select **Replay audio
 
 Jugaad sends the microphone clip to Gnani for transcription, the submitted text to Gemini for interpretation, and grounded reply text to Gnani for synthesis. Text input works when microphone access or a speech service is unavailable. See the [voice verification](docs/voice-verification.md) for model, language, and timing details.
 
+## Voice personalization
+
+Choose and preview a verified Gnani Timbre voice after selecting a language, or update it under **Profile → Voice & Language**. Jugaad saves the choice in your session and uses it for later replies. See [Gnani voice integration](docs/GNANI_VOICE_INTEGRATION.md) for the catalog and verification.
+
+## Interaction sounds and motion
+
+Jugaad uses short synthesized cues for microphone activation, offer discovery, selection and confirmed simulated payments. **Profile → Sound & Motion** controls interface sound, volume and reduced motion on this browser. Voice playback has its own mute control. See the [sonic design system](docs/SONIC_DESIGN_SYSTEM.md) for the event registry and playback behavior.
+
 ## Internal sandbox commerce
 
 The internal catalog covers selected food, clothing, grocery, electronics, household and accessory products. It creates consistent variants with deterministic totals and stores the offers. Try “Find a black oversized cotton shirt under ₹800 in Hyderabad,” then say “second one” and “yes, proceed.” Complete the fictional code on the keypad. The internal receipt has a `JG-` reference. Wiggy and Tomato issue their own sandbox receipts for their inventory.

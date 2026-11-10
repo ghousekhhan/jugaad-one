@@ -1,5 +1,7 @@
 "use client";
 
+import { playSound } from "@/lib/sound/engine";
+
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "./ui";
@@ -142,9 +144,15 @@ export function FoodDiscovery({ filters, onFilters, location, budget, radius, pr
     setState({ kind: "loading", ...context });
     try {
       const result = await postJson<FoodSearchResult>("/api/marketplace/search", input.data, controller.signal);
-      if (!controller.signal.aborted) setState({ kind: "result", ...context, result, input: input.data });
+      if (!controller.signal.aborted) {
+        setState({ kind: "result", ...context, result, input: input.data });
+        if (result.kind === "offers" ? result.offers.length : result.restaurants.length) void playSound("search.results");
+      }
     } catch (error) {
-      if (!controller.signal.aborted) setState({ kind: "error", ...context, message: error instanceof Error ? error.message : "Food search is unavailable." });
+      if (!controller.signal.aborted) {
+        void playSound("action.error");
+        setState({ kind: "error", ...context, message: error instanceof Error ? error.message : "Food search is unavailable." });
+      }
     }
   }
 

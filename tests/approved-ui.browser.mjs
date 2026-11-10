@@ -35,6 +35,7 @@ try {
   await page.screenshot({path:output+'/onboarding-desktop.png',fullPage:true});
   await page.getByRole('button',{name:'English'}).click();
   await page.getByRole('button',{name:/continue/i}).click();
+  await page.getByRole('button',{name:'Continue with this voice'}).click();
   await page.getByLabel('Your name',{exact:true}).fill('UI QA');
   await page.getByRole('button',{name:/continue/i}).click();
   await page.getByRole('heading',{name:/good to have you here, UI QA/i}).waitFor();
@@ -91,7 +92,7 @@ try {
   await page.getByLabel('Conversation language').selectOption('hi-en');
   await page.getByLabel('Service city').selectOption('mumbai');
   await page.getByRole('button',{name:/save changes/i}).click();
-  await page.getByText('Changes saved.',{exact:true}).waitFor();
+  await page.getByText('Language saved. Your voice is now Poorvi.',{exact:true}).waitFor();
   await nav.getByRole('button',{name:'Jugaad'}).click();
   const applied = page.waitForRequest((request) => request.url().endsWith('/api/agent/interpret') && request.postDataJSON()?.text === 'Hello');
   const greeting = await ask('Hello');

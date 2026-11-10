@@ -11,6 +11,7 @@ export const voiceLanguages = {
 } as const;
 
 export const speechSourceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("preview"), language: voiceLocale, voice: z.string().min(1).max(40) }).strict(),
   z.object({ kind: z.literal("reply"), ticket: z.string().min(1).max(3600) }).strict(),
   z.object({ kind: z.enum(["approval", "confirmation"]), transactionId: z.uuid(), language: voiceLocale }).strict(),
 ]);

@@ -46,6 +46,7 @@ const messages: Record<string, string> = {
   VOICE_TIMEOUT: "Gnani took too long to respond. Try again or continue by typing.",
   VOICE_UNAVAILABLE: "Gnani voice is temporarily unavailable. You can continue by typing.",
   VOICE_RESPONSE: "Gnani did not return a usable voice response. Try again or continue by typing.",
+  VOICE_SELECTION: "Choose a voice available for this language.",
   VOICE_TICKET: "This voice reply is unavailable or has expired. Send a new message to hear a reply.",
   VOICE_TRANSACTION_STATE: "This transaction is not ready for that announcement. Check the current quote or receipt.",
   OVER_DELIVERY_ESTIMATE: "The provider’s delivery estimate exceeds your time limit.",

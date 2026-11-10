@@ -3,11 +3,36 @@
 **Workspace** `/Users/khajaghousekhan/Desktop/Jugaad_ONE`  
 **Outgoing agent** OpenAI Codex  
 **Incoming agent** Google Antigravity  
-**Shift status** Voice and payment overhaul / Handing over to Antigravity
+**Shift status** Voice personalization and payment motion / Handing over to Antigravity
 
-**Last updated** 2026-11-10T19:53:33+05:30 (Asia/Kolkata)
+**Last updated** 2026-11-10T20:15:20+05:30 (Asia/Kolkata)
 
 **Git** Local branch `main` tracks `origin/main`. See the latest handoff for this shift.
+
+---
+
+## CODEX HANDOFF — VOICE PERSONALIZATION AND PAYMENT MOTION
+
+**Timestamp** 2026-11-10T20:15:20+05:30 (Asia/Kolkata)
+
+- Timbre v2.5 verified all 16 published picker options with live WAV and SSE probes. Onboarding and Profile use the shared picker and playback controller. The existing commerce session stores the voice, language and model. Reply tickets and transaction narration resolve the saved voice on the server. Recoverable pre-stream reply failures can use another verified voice in the same locale with a visible notice.
+- English, Hindi, Telugu and Hinglish passed app-level marketplace discovery and live Timbre checks for previews, general replies and contextual follow-ups. Voice changes preserved the saved dialogue and offers. Chrome also verified real preview playback and stopping, Profile persistence, synthetic microphone onboarding, and simulated checkout.
+- The payment confirmation now contracts the progress ring before drawing the checkmark and launching confetti. The Chrome payment regression covered the contraction, reduced motion, injected failure, receipt refresh and no duplicate order.
+- The 81-test suite, lint, typecheck and production build passed. No packages or database migrations were added. Changes are local. See [Gnani voice integration](GNANI_VOICE_INTEGRATION.md) for measurements, source files and verification limits.
+
+---
+
+## CODEX HANDOFF — SONIC INTERACTION FEEDBACK
+
+**Timestamp** 2026-11-10T20:05:04+05:30 (Asia/Kolkata)
+
+The interaction changes are local on `main`, based on `3deca8c`. No dependencies, database schema or API changes were introduced.
+
+- `src/lib/sound/engine.ts` owns the synthesized event registry, gain, mute, cue arbitration and audio context. `interaction-feedback.tsx` primes audio from trusted gestures and adds browser-persisted sound, volume and motion controls to Profile.
+- `voice-controls.tsx`, `voice/capture.ts` and `use-voice-playback.ts` sequence activation before recorder input, suppress cues during capture or Timbre playback and cancel stale audio.
+- `workspace.tsx`, `food-discovery.tsx` and `payment-screen.tsx` attach cues to completed interaction states. Payment success requires a verified receipt. Payment narration waits for the chime. CSS uses the existing motion and respect for reduced motion, including the new Profile preference in canvas confetti.
+- The 80-test suite, lint and typecheck passed. Chrome confirmed activation cleanup before worklet initialization, one discovery, selection and applied discount cue, success gating, no chime on receipt refresh and saved Profile settings. The voice regression used synthetic microphone input and mocked Prisma finals. The payment regression used internal simulated checkout and an injected failure.
+- See [Sonic design system](SONIC_DESIGN_SYSTEM.md) for the registry and verification. The next validation step is to test speaker-to-microphone leakage and Timbre clarity on a physical phone, including Safari autoplay.
 
 ---
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { SoundMotionSettings } from "./interaction-feedback";
+
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowUpRight, X } from "lucide-react";
 import type { Profile } from "@/lib/commerce/session";
@@ -7,11 +9,12 @@ import type { SandboxOrder } from "@/lib/commerce/types";
 import type { CheckoutSummary } from "@/lib/marketplace/checkout-types";
 import { demoCities } from "@/lib/marketplace/demo-cities";
 import { formatPaise } from "@/lib/marketplace/discovery-types";
+import { preferredVoice } from "@/lib/voice/catalog";
 import { voiceLanguages, type VoiceLocale } from "@/lib/voice/types";
 
 const date = new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeZone: "Asia/Kolkata" });
 
-export function ApprovedProfile({ profile, onSave }: { profile: Profile; onSave: (profile: Profile) => Promise<void> }) {
+export function ApprovedProfile({ profile, onSave, voiceSettings }: { profile: Profile; voiceSettings?: ReactNode; onSave: (profile: Profile) => Promise<void> }) {
   const [name, setName] = useState(profile.name);
   const [language, setLanguage] = useState(profile.language);
   const [region, setRegion] = useState(profile.region);
@@ -27,7 +30,7 @@ export function ApprovedProfile({ profile, onSave }: { profile: Profile; onSave:
     try {
       const location = region === profile.region && profile.location ? profile.location : { source: "manual" as const, cityId: region };
       await onSave({ name: name.trim(), language, region, location, locality: region === profile.region ? profile.locality : undefined });
-      setNotice("Changes saved.");
+      setNotice(language !== profile.language ? `Language saved. Your voice is now ${preferredVoice(language)}.` : "Changes saved.");
     } catch (error) {
       setFailed(true);
       setNotice(error instanceof Error ? error.message : "Could not save your preferences.");
@@ -55,6 +58,8 @@ export function ApprovedProfile({ profile, onSave }: { profile: Profile; onSave:
           {notice && <p className={failed ? "field-error" : "workspace-help"} role={failed ? "alert" : "status"}>{notice}</p>}
         </form>
       </div>
+      {voiceSettings}
+      <SoundMotionSettings />
       <div className="profile-note"><span aria-hidden="true">✳</span><p>Your preferences stay with this browser’s Jugaad session. No account is required.</p></div>
     </section>
   );

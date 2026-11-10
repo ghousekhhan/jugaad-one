@@ -3,11 +3,12 @@ import "server-only";
 import { z } from "zod";
 import { MarketplaceError } from "../marketplace/provider";
 import { voiceLanguages, type VoiceLocale, type VoiceTranscript } from "./types";
+import { timbreModel } from "./catalog";
+export { timbreModel } from "./catalog";
 import { finalizeTimbreWave, inspectVoiceWave, voiceSampleRate } from "./wave";
 
 const prismaEndpoint = "https://api.vachana.ai/stt/v3";
 const timbreEndpoint = "https://api.vachana.ai/api/v1/tts/inference";
-export const timbreModel = "timbre-v2.5";
 export const maxVoiceReplyLength = 550;
 
 export function gnaniConfigured() { return Boolean(process.env.GNANI_API_KEY?.trim()); }
@@ -72,18 +73,18 @@ export async function transcribeVoice(audio: ArrayBuffer, language: VoiceLocale,
   return { text, language, latencyMs: Math.round(performance.now() - start), model: result.data.model, requestId: result.data.request_id };
 }
 
-function synthesisPayload(text: string, language: VoiceLocale) {
+function synthesisPayload(text: string, language: VoiceLocale, voice: string) {
   if (!text.trim() || text.length > maxVoiceReplyLength) throw new MarketplaceError("VOICE_RESPONSE", 422);
   const speed = Number(process.env.GNANI_TTS_SPEED || 1);
   return JSON.stringify({
-    text, language, voice: voiceLanguages[language].voice, model: timbreModel, speed: speed >= 0.85 && speed <= 1.15 ? speed : 1,
+    text, language, voice, model: timbreModel, speed: speed >= 0.85 && speed <= 1.15 ? speed : 1,
     audio_config: { container: "wav", encoding: "linear_pcm", sample_rate: voiceSampleRate, num_channels: 1, sample_width: 2 },
   });
 }
 
-export async function speakVoice(text: string, language: VoiceLocale, signal: AbortSignal) {
+export async function speakVoice(text: string, language: VoiceLocale, signal: AbortSignal, voice: string = voiceLanguages[language].voice) {
   const start = performance.now();
-  const response = await requestGnani(timbreEndpoint, synthesisPayload(text, language), "application/json", signal);
+  const response = await requestGnani(timbreEndpoint, synthesisPayload(text, language, voice), "application/json", signal);
   const audio = finalizeTimbreWave(await readAudioBytes(response.body, 2_100_000));
   if (!inspectVoiceWave(audio)?.hasSignal) throw new MarketplaceError("VOICE_RESPONSE", 502);
   return { audio, latencyMs: Math.round(performance.now() - start) };
@@ -137,9 +138,9 @@ async function* timbreChunks(body: ReadableStream<Uint8Array>) {
   }
 }
 
-export async function streamVoice(text: string, language: VoiceLocale, signal: AbortSignal) {
+export async function streamVoice(text: string, language: VoiceLocale, signal: AbortSignal, voice: string = voiceLanguages[language].voice) {
   const start = performance.now();
-  const response = await requestGnani("https://api.vachana.ai/api/v1/tts/sse", synthesisPayload(text, language), "application/json", signal);
+  const response = await requestGnani("https://api.vachana.ai/api/v1/tts/sse", synthesisPayload(text, language, voice), "application/json", signal);
   if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream")) throw new MarketplaceError("VOICE_RESPONSE", 502);
   const chunks = timbreChunks(response.body);
   const first = await chunks.next();

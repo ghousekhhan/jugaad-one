@@ -14,6 +14,24 @@ try {
   const transcripts = [];
   let nextId = 0;
   await page.addInitScript(() => {
+    window.activationTones = [];
+    window.interfaceTones = [];
+    const start = OscillatorNode.prototype.start;
+    OscillatorNode.prototype.start = function (...args) {
+      window.interfaceTones.push(this.frequency.value);
+      if ([392, 587].includes(this.frequency.value)) window.activationTones.push({ type: "tone", frequency: this.frequency.value });
+      return start.apply(this, args);
+    };
+    const stop = OscillatorNode.prototype.stop;
+    OscillatorNode.prototype.stop = function (...args) {
+      if (!args.length && [392, 587].includes(this.frequency.value)) window.activationTones.push({ type: "cleanup" });
+      return stop.apply(this, args);
+    };
+    const addModule = AudioWorklet.prototype.addModule;
+    AudioWorklet.prototype.addModule = function (...args) {
+      window.activationTones.push({ type: "worklet" });
+      return addModule.apply(this, args);
+    };
     let audio;
     let stream;
     navigator.mediaDevices.getUserMedia = async () => {
@@ -47,6 +65,11 @@ try {
   await page.goto(base + "/workspace");
   await page.getByRole("heading", { name: /enable your microphone/i }).waitFor();
   await page.getByRole("button", { name: "Start Conversation" }).click();
+  await page.waitForFunction(() => window.activationTones.some(({ type }) => type === "worklet"));
+  const activation = await page.evaluate(() => window.activationTones);
+  assert.deepEqual(activation.filter(({ type }) => type === "tone").map(({ frequency }) => frequency), [392, 587]);
+  assert.equal(activation.filter(({ type }) => type === "cleanup").length, 2);
+  assert.ok(activation.findLastIndex(({ type }) => type === "cleanup") < activation.findIndex(({ type }) => type === "worklet"));
   await page.getByLabel("Service city").selectOption("hyderabad");
   await page.getByRole("button", { name: "Confirm city" }).click();
   await page.getByText(/which language are you most comfortable/i).first().waitFor();
@@ -62,6 +85,7 @@ try {
   await say("Yes", "hinglish-final");
   await proposed("Hinglish").waitFor();
   await say("Yes");
+  await page.getByRole("button", { name: "Continue with this voice" }).click();
   await page.getByRole("heading", { name: /what should i call you/i }).waitFor();
   await page.getByText(/main Jugaad hoon/i).first().waitFor();
   await page.getByLabel("Your name", { exact: true }).fill("Voice QA");
@@ -80,6 +104,7 @@ try {
   await page.getByRole("button", { name: "Start Conversation" }).evaluate((node) => { window.originalMic = node; });
   const initial = await ask("I want something sweet, maybe cake");
   assert.equal(initial.sandbox.offers.length, 3);
+  await page.waitForFunction(() => window.interfaceTones.filter((tone) => tone === 659).length === 1);
   assert.equal(initial.replyLanguage, "hi-en");
   const cards = page.locator(".comparison-cards-grid .comparison-card");
   await cards.nth(2).waitFor();
@@ -108,11 +133,15 @@ try {
   const recommendation = await ask("Which option do you recommend if I want the lowest price?");
   assert.equal(recommendation.dialogueAction, "recommend");
   assert.match(recommendation.reply, /Mirchi Moon/i);
+  const selectionOffset = await page.evaluate(() => window.interfaceTones.length);
   const selected = await ask("Yes");
+  await page.waitForFunction((offset) => window.interfaceTones.slice(offset).join(",") === "349,523", selectionOffset);
+  assert.equal(await page.evaluate(() => window.interfaceTones.includes(554)), false);
   assert.equal(selected.sandbox.quote.offer.listing.seller, "Mirchi Moon");
   assert.equal(selected.trace.searchAttempted, false);
   const discount = await ask("Yes");
   assert.equal(discount.sandbox.quote.welcomeOffer.status, "applied");
+  await page.waitForFunction(() => window.interfaceTones.filter((tone) => tone === 554).length === 1);
   const approved = await ask("Correct");
   assert.match(approved.paymentPath, /^\/payment\?/);
   assert.equal(approved.sandbox.orders.length, 0);
@@ -123,7 +152,7 @@ try {
   const saved = await page.evaluate(async () => (await fetch("/api/commerce")).json());
   assert.equal(saved.orders.length, 1);
   assert.equal(saved.profile.language, "hi-en");
-  console.log("Mocked Prisma finals and real browser transitions passed. Three cards fit both desktop viewports. Live recommendation and simulated checkout passed.");
+  console.log("Mocked Prisma finals, activation ordering, and discovery, selection and discount cues passed. Three cards fit both desktop viewports. Live recommendation and simulated checkout passed.");
 } finally {
   await browser.close();
 }

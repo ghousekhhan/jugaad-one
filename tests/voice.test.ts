@@ -178,3 +178,35 @@ test("Timbre streaming forwards real PCM chunks and requires a complete vendor s
   assert.equal((await broken.read()).done, false);
   await assert.rejects(broken.read(), { code: "VOICE_RESPONSE" });
 });
+
+test("a rejected reply voice can fall back within its locale while previews stay exact", async (context) => {
+  const { NextRequest } = await import("next/server");
+  const { POST } = await import("../src/app/api/voice/speak/route");
+  const previous = process.env.GNANI_API_KEY;
+  process.env.GNANI_API_KEY = testKey;
+  context.after(() => {
+    if (previous === undefined) delete process.env.GNANI_API_KEY;
+    else process.env.GNANI_API_KEY = previous;
+  });
+  const voices: string[] = [];
+  context.mock.method(globalThis, "fetch", async (_input: string, init: RequestInit) => {
+    const { voice, language } = JSON.parse(String(init.body));
+    assert.equal(language, "en-IN");
+    voices.push(voice);
+    return voice === "Kaveri" ? new Response(null, { status: 422 }) : new Response(sample());
+  });
+  const send = (data: unknown) => POST(new NextRequest("http://localhost/api/voice/speak", {
+    method: "POST", headers: { Origin: "http://localhost", "Content-Type": "application/json" }, body: JSON.stringify(data),
+  }));
+  const invalid = await send({ kind: "preview", language: "en-IN", voice: "Poorvi" });
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(voices, []);
+  const preview = await send({ kind: "preview", language: "en-IN", voice: "Kaveri" });
+  assert.equal(preview.status, 422);
+  assert.deepEqual(voices, ["Kaveri"]);
+  const reply = await send({ kind: "reply", ticket: issueSpeechTicket("Which dish?", "en-IN") });
+  assert.equal(reply.status, 200);
+  assert.equal(reply.headers.get("X-Voice-Id"), "Pranav");
+  assert.equal(reply.headers.get("X-Voice-Fallback"), "1");
+  assert.deepEqual(voices, ["Kaveri", "Kaveri", "Pranav"]);
+});

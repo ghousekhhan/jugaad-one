@@ -12,6 +12,14 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_BINAR
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.setDefaultNavigationTimeout(90000);
+  await page.addInitScript(() => {
+    window.paymentTones = [];
+    const start = OscillatorNode.prototype.start;
+    OscillatorNode.prototype.start = function (...args) {
+      window.paymentTones.push(this.frequency.value);
+      return start.apply(this, args);
+    };
+  });
   await page.route("**/api/voice/speak", (route) => route.abort());
   await page.goto(base + "/payment");
   await page.getByRole("heading", { name: "No approved checkout" }).waitFor();
@@ -77,6 +85,7 @@ try {
     assert.equal(await authorize.count(), 0);
     assert.equal(await page.getByRole("heading", { name: /payment successful/i }).count(), 0);
     assert.equal(payments, 1);
+    assert.equal(await page.evaluate(() => window.paymentTones.includes(784)), false);
   } finally {
     release();
   }
@@ -87,19 +96,30 @@ try {
   await authorize.click();
   await page.getByRole("heading", { name: /payment successful/i }).waitFor();
   assert.equal(await page.locator(".pay-confetti").count(), 1);
+  assert.equal(await page.locator(".pay-spinner-exit").evaluate((element) => getComputedStyle(element).animationName), "pay-contract");
+  await page.waitForFunction(() => window.paymentTones.filter((tone) => tone === 784).length === 1);
   await page.screenshot({ path: output + "/payment-success-mobile.png" });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: output + "/payment-success-desktop.png" });
   await page.emulateMedia({ reducedMotion: "reduce" });
   assert.equal(await page.locator(".pay-confetti").isVisible(), false);
+  assert.equal(await page.locator(".pay-spinner-exit").isVisible(), false);
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: /payment successful/i }).waitFor();
   assert.equal(await page.locator(".pay-confetti").count(), 0);
+  assert.equal(await page.evaluate(() => window.paymentTones.includes(784)), false);
   const saved = await (await page.request.get(base + "/api/commerce")).json();
   assert.equal(saved.orders.length, 1);
   await page.getByRole("link", { name: "View order" }).click();
   await page.getByRole("dialog").getByText("No money was charged.").waitFor();
-  console.log("Payment route, approved amount, demo authorization, failure, success, reduced motion and persisted receipt passed.");
+  await page.goto(base + "/workspace?tab=profile");
+  await page.getByLabel("Interface sounds").selectOption("off");
+  await page.getByLabel("Reduced motion").selectOption("reduce");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => document.documentElement.dataset.feedbackMotion === "reduce");
+  assert.equal(await page.getByLabel("Interface sounds").inputValue(), "off");
+  assert.equal(await page.getByLabel("Reduced motion").inputValue(), "reduce");
+  console.log("Payment route, failure, confirmed success cue, refresh, receipt and persisted accessibility preferences passed.");
   if (process.env.JUGAAD_LIVE_PROVIDER === "1") {
     const search = {
       mode: "dish", query: "Chicken Dum Biryani", location: { source: "manual", cityId: "hyderabad" },

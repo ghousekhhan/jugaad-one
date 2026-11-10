@@ -195,7 +195,7 @@ export function SandboxCommerce({
             <Button disabled={pending} onClick={() => void onAction({ action: "welcome_offer", quoteId: quote.id, accept: true })}>Apply JUGAAD20</Button>
             <Button variant="quiet" disabled={pending} onClick={() => void onAction({ action: "welcome_offer", quoteId: quote.id, accept: false })}>Decline</Button>
           </div>}
-          <dl className="quote-breakdown-grid">
+          <dl key={quote.offer.totalPaise} className="quote-breakdown-grid" data-discount-applied={welcomeDiscount > 0 || undefined}>
             <div className="breakdown-row">
               <dt>Items ({quote.offer.quantity}x)</dt>
               <dd>{formatPaise(quote.offer.listing.pricePaise * quote.offer.quantity)}</dd>

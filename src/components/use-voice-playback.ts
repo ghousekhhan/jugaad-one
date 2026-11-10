@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { holdSounds, stopSound } from "@/lib/sound/engine";
+
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { voiceLocale, type SpeechSource, type VoiceLocale } from "@/lib/voice/types";
 import { pcmPlayback } from "@/lib/voice/pcm-playback";
 import { inspectVoiceWave, voiceSampleRate, waveformLevels } from "@/lib/voice/wave";
@@ -21,6 +23,10 @@ function release(clip?: Clip) {
 
 export function useVoicePlayback() {
   const [status, setStatus] = useState<PlaybackStatus>("idle");
+  useLayoutEffect(() => {
+    if (status === "loading" || status === "playing") return holdSounds();
+  }, [status]);
+  const [voiceNotice, setVoiceNotice] = useState("");
   const [caption, setCaption] = useState<{ text: string; language: VoiceLocale }>();
   const [muted, setMuted] = useState(false);
   const [notice, setNotice] = useState("");
@@ -51,6 +57,7 @@ export function useVoicePlayback() {
   }, []);
 
   const startClip = useCallback(async (current: Clip) => {
+    stopSound();
     const attempt = ++playbackAttempt.current;
     setNotice("");
     current.audio.currentTime = 0;
@@ -68,6 +75,7 @@ export function useVoicePlayback() {
     if (sessionSignal?.aborted) return;
     const key = JSON.stringify(source);
     if (pending.current?.key === key) return;
+    stopSound();
     lastSource.current = source;
     pending.current?.controller.abort();
     streamed.current?.stop();
@@ -79,6 +87,7 @@ export function useVoicePlayback() {
     const controller = new AbortController();
     const signal = sessionSignal ? AbortSignal.any([sessionSignal, controller.signal]) : controller.signal;
     pending.current = { key, controller };
+    setVoiceNotice("");
     setCaption(captionHint);
     setNotice("");
     setStatus("loading");
@@ -92,6 +101,10 @@ export function useVoicePlayback() {
       if (!response.ok) {
         const error = await response.json().catch(() => null);
         throw new Error(error?.error?.message ?? "Timbre audio is unavailable.");
+      }
+      if (signal.aborted) return;
+      if (response.headers.get("x-voice-fallback") === "1") {
+        setVoiceNotice(`Your selected voice is temporarily unavailable. Playing ${response.headers.get("x-voice-id")} for this reply.`);
       }
       const locale = voiceLocale.parse(response.headers.get("x-voice-language"));
       const encoded = response.headers.get("x-voice-text");
@@ -179,6 +192,16 @@ export function useVoicePlayback() {
     setNotice("");
   }, []);
 
+  function reset() {
+    stop();
+    release(clip.current);
+    clip.current = undefined;
+    lastSource.current = undefined;
+    setCaption(undefined);
+    setVoiceNotice("");
+    setStatus("idle");
+  }
+
   async function waitForEnd(signal?: AbortSignal) {
     const live = streamed.current;
     if (live) { await live.end; return; }
@@ -213,7 +236,7 @@ export function useVoicePlayback() {
     setMuted(mute.current);
   }
 
-  return { status, caption, muted, notice, levels, play, stop, replay, toggleMute, waitForEnd, prime };
+  return { status, caption, muted, notice, voiceNotice, levels, play, stop, reset, replay, toggleMute, waitForEnd, prime };
 }
 
 export type VoicePlayback = ReturnType<typeof useVoicePlayback>;

@@ -1,5 +1,9 @@
 "use client";
 
+import { VoicePicker } from "./voice-picker";
+import { preferredVoice, type VoicePreference } from "@/lib/voice/catalog";
+import { playSound } from "@/lib/sound/engine";
+
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowUpRight, CircleMinus, Globe, MapPin, Plus, ReceiptText, Search, SlidersHorizontal } from "lucide-react";
@@ -77,8 +81,10 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
   const commerceBusy = useRef(false);
   const [restoredTurn, setRestoredTurn] = useState<FoodTurn>();
   const [restoredIntent, setRestoredIntent] = useState<FoodIntent>();
+  const [voiceChangeNotice, setVoiceChangeNotice] = useState("");
+  const [voicePreference, setVoicePreference] = useState<VoicePreference>();
   const [profile, setProfile] = useState<Profile>();
-  const [onboardingStage, setOnboardingStage] = useState<"ready" | "permission" | "name" | "confirm-name" | "language" | "confirm-language" | "region" | "confirm-region">("ready");
+  const [onboardingStage, setOnboardingStage] = useState<"ready" | "permission" | "name" | "confirm-name" | "language" | "confirm-language" | "choose-voice" | "region" | "confirm-region">("ready");
   const [candidateLanguage, setCandidateLanguage] = useState<VoiceLocale>();
   const [candidateName, setCandidateName] = useState("");
   const [candidateLocation, setCandidateLocation] = useState<{ location: FoodLocation; accuracy: number; label: string; locality?: string }>();
@@ -139,6 +145,7 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
             .then((transaction) => { if (!controller.signal.aborted) setVoiceQuote(transaction); }, () => {});
         }
       }
+      setVoicePreference(session.voicePreference);
       if (session.profile) {
         setProfile(session.profile);
         setUserName(session.profile.name);
@@ -152,7 +159,7 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
         const language = voiceLocale.safeParse(sessionStorage.getItem("jugaad-onboarding-locale"));
         if (language.success) {
           setVoiceLanguage(language.data);
-          setOnboardingStage("name");
+          setOnboardingStage(session.voicePreference?.language === language.data ? "name" : "choose-voice");
         } else setOnboardingStage("permission");
       }
       setSessionLoaded(true);
@@ -348,6 +355,10 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
       if (signal?.aborted) return;
       if (input.action === "pay" && result.orders[0] && !sandbox.orders.some(({ reference }) => reference === result.orders[0].reference)) setCurrentSandboxOrder(result.orders[0].reference);
       setSandbox(result);
+      if (input.action === "select" && result.quote) void playSound("offer.select");
+      if (input.action === "welcome_offer" && input.accept && result.quote?.welcomeOffer?.status === "applied") {
+        void playSound("discount.applied");
+      }
       if (input.action === "approve" && result.quote?.approvedAt) {
         playback.stop();
         router.push(paymentHref("jugaad", result.quote.id));
@@ -357,7 +368,10 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
         await playback.play({ kind: "reply", ticket: result.speechTicket }, { text: result.speech, language }, signal);
       }
     } catch (error) {
-      if (!signal?.aborted) setInterpretationError(error instanceof Error ? error.message : "Checkout could not continue.");
+      if (!signal?.aborted) {
+        void playSound("action.error");
+        setInterpretationError(error instanceof Error ? error.message : "Checkout could not continue.");
+      }
     } finally {
       commerceBusy.current = false;
       setCommercePending(false);
@@ -388,16 +402,30 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
     }
   }
 
-  async function acceptOnboardingLanguage(language: VoiceLocale, signal?: AbortSignal) {
+  function acceptOnboardingLanguage(language: VoiceLocale, signal?: AbortSignal) {
     if (signal?.aborted) return;
     locationPrompt.current?.abort();
     transcriptLanguage.current = null;
     changeLanguage(language);
     sessionStorage.setItem("jugaad-onboarding-locale", language);
     setCandidateLanguage(undefined);
-    setOnboardingStage("name");
+    playback.reset();
+    setCapturingVoice(false);
+    setOnboardingStage("choose-voice");
+    setLocationFeedback("");
     setDraft((value) => ({ ...value, text: "" }));
-    await sayPrompt("name", language, signal, undefined, Boolean(signal));
+  }
+
+  async function saveVoice(id: string) {
+    const result = await postJson<{ voicePreference: VoicePreference }>("/api/commerce", {
+      action: "voice", language: voiceLanguage, voice: id,
+    });
+    setVoicePreference(result.voicePreference);
+    if (onboardingStage === "choose-voice") {
+      playback.prime();
+      setOnboardingStage("name");
+      void sayPrompt("name", voiceLanguage).catch(() => setLocationFeedback("You can type your name below."));
+    }
   }
 
   async function submitVoice(text: string, language: VoiceLocale, signal: AbortSignal) {
@@ -572,6 +600,19 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
         updateTransaction(result.providerTransaction);
       }
       const speechRequested = Boolean(!exit && spoken && !playback.muted && result.speechTicket);
+      if (!speechRequested) {
+        const hasOffers = Boolean(result.sandbox?.offers.length ||
+          (result.comparison?.result.kind === "offers" && result.comparison.result.offers.length));
+        if (result.sandbox?.quote?.welcomeOffer?.status === "applied" && sandbox.quote?.welcomeOffer?.status !== "applied") {
+          void playSound("discount.applied");
+        } else if (result.trace?.searchAttempted && hasOffers) {
+          void playSound("search.results");
+        } else if (result.dialogueAction === "select" && result.selectedOfferId) {
+          void playSound("offer.select");
+        } else if (result.status === "provider_error") {
+          void playSound("action.error");
+        }
+      }
       if (speechRequested && result.speechTicket) {
         void playback.play({ kind: "reply", ticket: result.speechTicket }, { text: result.reply, language: result.replyLanguage ?? "en-IN" }, signal);
       }
@@ -580,7 +621,10 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
       } });
       return result.voiceControl;
     } catch (error) {
-      if (!signal.aborted) setInterpretationError(error instanceof Error ? error.message : "Gemini could not interpret this request.");
+      if (!signal.aborted) {
+        void playSound("action.error");
+        setInterpretationError(error instanceof Error ? error.message : "Gemini could not interpret this request.");
+      }
     } finally {
       if (interpretationRequest.current === controller) {
         interpretationRequest.current = null;
@@ -630,9 +674,16 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
   const fieldError = (field: keyof RequestDraft) => errors[field] && <p className="field-error" role="alert" id={`${field}-error`}>{errors[field]}</p>;
 
   function changeLanguage(language: VoiceLocale) {
+    if (language !== voiceLanguage) {
+      playback.reset();
+      if (profile) {
+        setVoicePreference(undefined);
+        setVoiceChangeNotice(`Language changed. Your voice is now ${preferredVoice(language)}.`);
+      }
+    }
     setVoiceLanguage(language);
     setDraft((value) => ({ ...value, language: language === "hi-en" ? "hi-IN" : language }));
-    if (profile) void saveProfile({ ...profile, language }).catch(() => setLocationFeedback("The language preference could not be saved."));
+    if (profile && language !== voiceLanguage) void saveProfile({ ...profile, language }).catch(() => setVoiceChangeNotice("The language preference could not be saved."));
   }
 
   const telugu = voiceLanguage === "te-IN";
@@ -662,6 +713,7 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
 
   function switchTab(next: WorkspaceTab) {
     if (next === tab) return;
+    void playSound("ui.click");
     if (next !== "jugaad") leaveVoiceTab();
     const url = new URL(window.location.href);
     if (next === "jugaad") url.searchParams.delete("tab");
@@ -673,6 +725,10 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
   async function savePreferences(value: Profile) {
     const locationChanged = value.region !== profile?.region || JSON.stringify(value.location) !== JSON.stringify(profile?.location);
     await saveProfile(value);
+    if (value.language !== voiceLanguage) {
+      playback.reset();
+      setVoicePreference(undefined);
+    }
     setVoiceLanguage(value.language);
     setDraft((previous) => ({ ...previous, language: value.language === "hi-en" ? "hi-IN" : value.language }));
     if (locationChanged) {
@@ -696,7 +752,7 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
     }
   }
 
-  const voice = voiceAvailable && <VoiceControls
+  const voice = voiceAvailable && onboardingStage !== "choose-voice" && <VoiceControls
     key={voiceEpoch}
     language={voiceLanguage}
     onLanguage={changeLanguage}
@@ -717,13 +773,13 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
   </main>;
 
   if (onboardingStage !== "ready") {
-    const step = onboardingStage === "permission" ? 1 : onboardingStage === "region" || onboardingStage === "confirm-region" ? 2 : onboardingStage === "language" || onboardingStage === "confirm-language" ? 3 : 4;
+    const step = onboardingStage === "permission" ? 1 : onboardingStage === "region" || onboardingStage === "confirm-region" ? 2 : onboardingStage === "language" || onboardingStage === "confirm-language" ? 3 : onboardingStage === "choose-voice" ? 4 : 5;
     return <main id="main" className="onboarding">
       <header className="onboard-header"><ApprovedWordmark /><span className="small-tag">Getting to know you</span></header>
       <div className="onboard-content">
-        <div className="onboard-progress" aria-hidden="true">{[1, 2, 3, 4].map((item) => <span key={item} className={step >= item ? "progress-on" : ""} />)}</div>
+        <div className="onboard-progress" aria-hidden="true">{[1, 2, 3, 4, 5].map((item) => <span key={item} className={step >= item ? "progress-on" : ""} />)}</div>
         <div className="onboard-step">
-          <div className="eyebrow"><span className="eyebrow-line" /> Step 0{step} / 04</div>
+          <div className="eyebrow"><span className="eyebrow-line" /> Step 0{step} / 05</div>
           {onboardingStage === "permission" ? <>
             <h2>Enable your<br /><em>microphone.</em></h2><p>Allow microphone access to speak with Jugaad.</p>
             {entryPermission === "pending" && <p role="status">Waiting for microphone permission…</p>}
@@ -738,9 +794,10 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
             </button>)}</div>
             <button className="btn btn-dark btn-wide" type="button" onClick={() => {
               playback.prime();
-              void acceptOnboardingLanguage(candidateLanguage ?? voiceLanguage).catch(() => setLocationFeedback("The voice prompt is unavailable. You can type your name."));
+              acceptOnboardingLanguage(candidateLanguage ?? voiceLanguage);
             }}>Continue <span>→</span></button>
-          </> : step === 4 ? <>
+          </> : step === 4 ? <VoicePicker language={voiceLanguage} preference={voicePreference} playback={playback} onSave={saveVoice} onboarding available={voiceAvailable} />
+          : step === 5 ? <>
             <h2>What should<br /><em>I call you?</em></h2><p>Say your name or type it below. No account is needed.</p>
             <form onSubmit={(event) => {
               event.preventDefault();
@@ -843,7 +900,7 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
               <Button variant="secondary" onClick={() => { setActiveReceipt(justConfirmedProvider); switchTab("orders"); }}>View receipt</Button>
             </div>}
             {(sandbox.offers.length > 0 || sandbox.quote || sandbox.orders.some(({ reference }) => reference === currentSandboxOrder)) && <SandboxCommerce state={{ ...sandbox, orders: sandbox.orders.filter(({ reference }) => reference === currentSandboxOrder) }} onAction={actOnCommerce} pending={commercePending || interpretationPending} />}
-            {foodActive && !sandbox.offers.length && (manualOpen || (latestTurn?.comparison && !justConfirmedProvider)) ? <FoodDiscovery filters={foodFilters} onFilters={(filters) => { setFoodFilters(filters); setSelectedOffer(null); }} location={foodLocation} budget={draft.budget} radius={draft.distance} priority={draft.priority} showFilters={manualOpen} conversationComparison={justConfirmedProvider ? undefined : latestTurn?.comparison} onSelect={(offer) => { setVoiceQuote(undefined); setSelectedOffer(offer); }} /> :
+            {foodActive && !sandbox.offers.length && (manualOpen || (latestTurn?.comparison && !justConfirmedProvider)) ? <FoodDiscovery filters={foodFilters} onFilters={(filters) => { setFoodFilters(filters); setSelectedOffer(null); }} location={foodLocation} budget={draft.budget} radius={draft.distance} priority={draft.priority} showFilters={manualOpen} conversationComparison={justConfirmedProvider ? undefined : latestTurn?.comparison} onSelect={(offer) => { if (offer) void playSound("offer.select"); setVoiceQuote(undefined); setSelectedOffer(offer); }} /> :
               !foodActive && <div className="comparison-empty"><CategoryIcon kind="rides" /><h3>No ride offers yet</h3><p>Ride providers are not connected.</p></div>}
             {manualOpen && <><h3 className="comparison-label">{category === "food" ? "Food providers" : category === "rides" ? "Ride providers" : "Providers"}</h3>
             <ul className="workspace-provider-list" aria-label="Provider connections">
@@ -896,6 +953,7 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
             <button className="composer-send" aria-label="Send message" type="submit" disabled={!geminiAvailable || !draft.text.trim()}><ArrowUpRight size={20} /></button>
           </form>
           {interpretationError && <p className="field-error" role="alert">{interpretationError}</p>}
+          {voiceChangeNotice && <p className="workspace-help" role="status">{voiceChangeNotice}</p>}
           {interpretationPending && <p className="workspace-help" role="status">Checking your request…</p>}
           {!geminiAvailable && <p className="workspace-help">Conversation is unavailable. Manual food search is available below.</p>}
           <div className="approved-conversation-actions">
@@ -912,7 +970,9 @@ export function Workspace({ initialDraft, providers, geminiAvailable, voiceAvail
       {tab === "orders" && <ApprovedOrders orders={sandbox.orders} checkout={checkout} loading={!checkout && !checkoutError} error={checkoutError} active={activeReceipt}
         onOpen={setActiveReceipt} onClose={() => setActiveReceipt(null)} onBack={() => switchTab("jugaad")} onReload={() => setHistoryReload((value) => value + 1)}
         detail={<OrderHistory summary={checkout} initialError={checkoutError} activeId={activeReceipt} onActivate={setActiveReceipt} onUpdate={updateTransaction} onReconciled={announceTransaction} onReload={() => setHistoryReload((value) => value + 1)} />} />}
-      {tab === "profile" && profile && <ApprovedProfile profile={profile} onSave={savePreferences} />}
+      {tab === "profile" && profile && <ApprovedProfile profile={profile} onSave={savePreferences} voiceSettings={
+        <VoicePicker key={voiceLanguage} language={voiceLanguage} preference={voicePreference} playback={playback} onSave={saveVoice} available={voiceAvailable} />
+      } />}
     </ApprovedShell>
   );
 }

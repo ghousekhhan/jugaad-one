@@ -6,13 +6,14 @@ import { checkoutCookie, checkoutOwner } from "../marketplace/checkout";
 import { MarketplaceError } from "../marketplace/provider";
 import { transactionStore } from "../marketplace/transaction-store";
 import type { SandboxState, Region } from "./types";
+import type { VoicePreference } from "../voice/catalog";
 import type { VoiceLocale } from "../voice/types";
 import type { Dialogue } from "../dialogue/state";
 import type { FoodIntent } from "../integrations/food-intent";
 import type { FoodLocation } from "../marketplace/discovery-types";
 
 export type Profile = { name: string; language: VoiceLocale; region?: Region; location?: FoodLocation; locality?: string };
-export type Session = SandboxState & { profile?: Profile; current?: FoodIntent; searchId?: string; seenTurns?: string[]; dialogue?: Dialogue; providerQuoteId?: string; lastTurn?: { id: string; result: import("../integrations/food-intent").FoodTurn }; expiresAt: number };
+export type Session = SandboxState & { profile?: Profile; voicePreference?: VoicePreference; current?: FoodIntent; searchId?: string; seenTurns?: string[]; dialogue?: Dialogue; providerQuoteId?: string; lastTurn?: { id: string; result: import("../integrations/food-intent").FoodTurn }; expiresAt: number };
 const retentionSeconds = 30 * 24 * 60 * 60;
 
 export function commerceSession(request: NextRequest) {
@@ -52,5 +53,5 @@ export async function updateSession(owner: string, transition: (session: Session
 }
 
 export async function deleteProfile(owner: string) {
-  await updateSession(owner, (session) => ({ ...session, profile: undefined, current: undefined, searchId: undefined, seenTurns: undefined, dialogue: undefined, lastTurn: undefined, providerQuoteId: undefined, offers: [], quote: undefined, orders: session.orders.map((order) => ({ ...order, destination: undefined })) }));
+  await updateSession(owner, (session) => ({ ...session, profile: undefined, voicePreference: undefined, current: undefined, searchId: undefined, seenTurns: undefined, dialogue: undefined, lastTurn: undefined, providerQuoteId: undefined, offers: [], quote: undefined, orders: session.orders.map((order) => ({ ...order, destination: undefined })) }));
 }

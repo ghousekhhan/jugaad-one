@@ -2578,3 +2578,97 @@ html:has(.approved-ui) {
 }
 
 .approved-ui .jugaad-stage[data-turn-pending] .agent-visual { min-height: 72px; }
+
+.approved-ui {
+  --feedback-press: 140ms;
+  --feedback-enter: 240ms;
+  --feedback-ease: cubic-bezier(.2, .65, .25, 1);
+}
+.approved-ui .feedback-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 1fr);
+  align-items: center;
+  gap: 12px 20px;
+  max-width: 620px;
+  margin: 24px 0;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--paper-elevated);
+}
+.approved-ui .feedback-settings legend { padding-inline: 6px; font-weight: 700; }
+.approved-ui .feedback-settings p { grid-column: 1 / -1; margin: 0; font-size: .9rem; }
+.approved-ui .feedback-settings label { font-weight: 600; }
+.approved-ui .feedback-settings select { min-height: 44px; width: 100%; padding-inline: 10px; border: 1px solid var(--control-border); border-radius: 8px; }
+.approved-ui .feedback-settings select:focus-visible { outline: 2px solid var(--navy); outline-offset: 3px; }
+.approved-ui .marketing-header .header-meta:hover { color: var(--accent-text); text-decoration: underline; text-underline-offset: 4px; }
+@media (max-width: 400px) {
+  .approved-ui .feedback-settings { gap: 8px 12px; padding-inline: 12px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .approved-ui .marketing .btn, .approved-ui .marketing-header .header-meta {
+    transition: transform var(--feedback-press) var(--feedback-ease), color var(--feedback-press), background-color var(--feedback-press);
+  }
+  .approved-ui .marketing .btn:hover { transform: translateY(-2px); }
+  .approved-ui .marketing .btn:active { transform: translateY(0) scale(.98); }
+  .approved-ui .hero-copy h1 { animation: feedback-enter 420ms var(--feedback-ease) both; }
+  .approved-ui .selected-quote, .approved-ui [data-discount-applied] {
+    animation: feedback-enter var(--feedback-enter) var(--feedback-ease) both;
+  }
+  .approved-ui [data-capture-state="permission"] .mic-start {
+    animation: feedback-activate 360ms var(--feedback-ease) both;
+  }
+  @supports (animation-timeline: view()) {
+    .approved-ui :is(.how-header, .providers-section) {
+      animation: feedback-enter linear both;
+      animation-timeline: view();
+      animation-range: entry 10% cover 24%;
+    }
+  }
+}
+@keyframes feedback-enter {
+  from { opacity: .55; translate: 0 6px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes feedback-activate {
+  from { box-shadow: 0 0 0 0 #f26a3570; }
+  to { box-shadow: 0 0 0 10px #f26a3500; }
+}
+html:not([data-feedback-motion="system"]) { scroll-behavior: auto !important; }
+html:not([data-feedback-motion="system"]) .approved-ui *,
+html:not([data-feedback-motion="system"]) .approved-ui *::before,
+html:not([data-feedback-motion="system"]) .approved-ui *::after {
+  animation: none !important;
+  transition: none !important;
+}
+html:not([data-feedback-motion="system"]) .approved-ui .agent-orb { scale: 1 !important; }
+html:not([data-feedback-motion="system"]) .approved-ui .marketing .btn { transform: none !important; }
+.approved-ui .agent-visual.listening .agent-orb { animation: none; }
+.approved-ui .agent-visual.thinking :is(.agent-orb, .halo-inner) { animation-iteration-count: 1; }
+.approved-ui .marketing .hero-orb { animation-duration: 4s; animation-iteration-count: 1; }
+.approved-ui .marketing .hero-flow span { animation: none; }
+
+.approved-ui .voice-picker {
+  display: grid;
+  gap: 14px;
+  max-width: 620px;
+  margin-block: 24px;
+}
+.approved-ui .voice-picker h2, .approved-ui .voice-picker p { margin: 0; }
+.approved-ui .voice-picker-options { display: grid; gap: 8px; }
+.approved-ui .voice-picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--paper-elevated);
+}
+.approved-ui .voice-picker-option[data-selected="true"] { border-color: var(--accent-text); }
+.approved-ui .voice-picker-option label { display: flex; align-items: center; min-height: 44px; gap: 10px; cursor: pointer; }
+.approved-ui .voice-picker-option input { accent-color: var(--accent-text); }
+.approved-ui .voice-picker-option small { display: block; color: var(--ink-secondary); }
+.approved-ui .voice-picker > .btn { justify-self: start; }

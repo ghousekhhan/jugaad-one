@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { getDefaultPreferences, getPreferences, subscribePreferences } from "@/lib/sound/engine";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
 export function PaymentCelebration() {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const reduced = useSyncExternalStore(subscribePreferences, getPreferences, getDefaultPreferences).motion === "reduce";
 
   useEffect(() => {
     const element = canvas.current;
     const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
     const context = element?.getContext("2d");
-    if (!element || !context || reducedMotion.matches) return;
+    if (!element || !context || reduced || reducedMotion.matches) return;
     const width = window.innerWidth;
     const height = window.innerHeight;
     const scale = Math.min(window.devicePixelRatio, 2);
@@ -67,7 +69,7 @@ export function PaymentCelebration() {
       stop();
       reducedMotion.removeEventListener("change", stop);
     };
-  }, []);
+  }, [reduced]);
 
   return <canvas className="pay-confetti" aria-hidden="true" ref={canvas} />;
 }

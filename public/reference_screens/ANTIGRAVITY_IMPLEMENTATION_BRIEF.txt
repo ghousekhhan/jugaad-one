@@ -1,0 +1,17 @@
+JUGAAD ONE: FRONTEND REBUILD — IMPLEMENT THESE EXACT VISUAL REFERENCES
+
+Open the existing Jugaad_ONE repository and read AGENTS.md, PRODUCT_SPEC.md and docs/DEVELOPMENT_HANDOFF.md. You and Codex alternate as equal developers.
+
+UNACCEPTABLE: applying a fresh skin to the old chatbot, retaining old layout, adding decorative backgrounds, or presenting static mockups as implementation.
+
+MANDATORY: Analyze each numbered PNG in this ZIP and implement its actual information architecture, positioning, typography scale, generous whitespace, navigation, and interaction hierarchy as real React components. Rebuild routes and component tree where needed, preserve working backend and service integrations.
+
+Use the best suitable professional React stack: existing Next.js/React + TypeScript, Tailwind CSS if appropriate, Motion for React/Framer Motion, Radix UI accessible primitives, Lucide icons, and genuine custom SVG motion assets. Inspect existing packages first; do not install overlapping libraries indiscriminately. Make high-end motion that is meaningful, performant and reduced-motion accessible. Do not imitate ChatGPT/Gemini layouts.
+
+UX: CTA from homepage -> language selection FIRST -> voice name capture -> location consent/confirmation -> always-available user-authorized voice workspace -> listening/understanding/searching state -> two-offer side-by-side comparison -> by-name selection -> add-on customization -> explicit quote approval -> separate demo payment screen (demo code, not real UPI PIN) -> server-confirmed simulated order -> tracking. Build all individual route states from reference screens.
+
+VOICE: Gnani Prisma STT, Gemini conversational routing and reasoning, Gnani Timbre TTS; mic has visually distinct idle/listening/speaking/thinking/processing states grounded in real backend events; avoid repeated record-stop; optional text fallback; chosen language English/Hindi/Telugu/Hinglish drives end-to-end localized speech and UI when supported.
+
+TECHNICAL: preserve fictional provider Wiggy/Tomato API, never pretend Swiggy/Zomato real integration is available. API-calculated amounts only. Dynamic inventory must be clearly simulated and persistent. Track actual backend order state. Use explicit user authorization and safe, fictional payment.
+
+VISUAL QA: capture ACTUAL rendered screenshots at 1440px and 375px for each new screen. Compare against reference PNGs and iterate until compositions are visibly transformed, not just recolored. Run lint, typecheck, build and existing tests. Save documented changes and real Asia/Kolkata timestamps to docs/DEVELOPMENT_HANDOFF.md. Continue across all screens without stopping for each small task.

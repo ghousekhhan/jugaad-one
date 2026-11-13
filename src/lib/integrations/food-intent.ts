@@ -5,6 +5,9 @@ import type { FoodTransaction } from "../marketplace/checkout-types";
 import { commerceProduct, type SandboxState } from "../commerce/types";
 import { voiceLocale, type VoiceLocale } from "../voice/types";
 import { dietaryRestrictionsSchema, locationSchema, providerPreferenceSchema, searchInputSchema, type FoodLocation, type FoodSearch, type FoodSearchResult } from "../marketplace/discovery-types";
+import type { Decision, Workflow } from "../dialogue/memory";
+import type { Dialogue } from "../dialogue/state";
+import type { Preferences } from "../dialogue/preferences";
 
 const name = z.string().trim().min(1).max(120);
 const search = searchInputSchema.shape;
@@ -56,6 +59,13 @@ export type ReasoningInput = InterpretationInput & {
     selectedOfferId?: string;
     recommendation?: { id: string; criterion: "price" | "speed" | "rating" };
     transactionStage?: string;
+    workflow?: Workflow;
+    pending?: Dialogue["confirmation"];
+    awaitingApproval?: string;
+    decisions?: Decision[];
+    previousTasks?: { id: string; constraints: FoodIntent }[];
+    preferences?: Preferences;
+    rejectedOfferIds?: string[];
     history?: { user: string; reply: string }[];
   };
 };
@@ -77,7 +87,7 @@ export type FoodTurn = {
   transition?: TaskTransition;
   searchFailure?: SearchFailure;
   responseView?: "conversation" | "comparison" | "checkout";
-  trace?: { turnId: string; reasoning: "deterministic" | "gemini_plan" | "gemini_reply"; tools: string[]; searchAttempted: boolean; speechAvailable: boolean; totalMs: number };
+  trace?: { turnId: string; reasoning: "deterministic" | "gemini_plan" | "gemini_reply"; tools: string[]; searchAttempted: boolean; speechAvailable: boolean; totalMs: number; workflowBefore?: Workflow; workflowAfter?: Workflow; changedFields?: string[] };
   taskId?: string;
   keepSelection?: boolean;
   providerTransaction?: FoodTransaction;

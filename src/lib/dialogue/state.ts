@@ -1,6 +1,7 @@
 import type { FoodIntent, FoodTurn } from "../integrations/food-intent";
 import type { Domain } from "./routing";
 import type { VoiceLocale } from "../voice/types";
+import type { Decision } from "./memory";
 
 export type Task = { id: string; turn: FoodTurn; domain?: Domain; selectedId?: string };
 export type Dialogue = {
@@ -10,6 +11,8 @@ export type Dialogue = {
   offerReply?: { text: string; language: VoiceLocale };
   recentTurns?: string[];
   history?: { user: string; reply: string }[];
+  decisions?: Decision[];
+  rejectedOfferIds?: string[];
   recommendation?: { id: string; criterion: "price" | "speed" | "rating" };
   lastLanguage?: VoiceLocale;
   awaitingApproval?: string;

@@ -1,5 +1,29 @@
 # JUGAAD ONE — DEVELOPMENT HANDOFF & OPERATIONAL LOG
 
+## Main promotion authorized by user
+
+**Agent** Codex. **Timestamp** 2026-11-14T01:24:17+05:30 (Asia/Kolkata).
+
+The user explicitly requested pushing the current V2 changes to `main`. Fetched `origin/main` and confirmed it matches the branch base `5d4101c`, with no intervening remote commits. Preparing a normal fast-forward merge and push, preserving the feature branch. Re-ran all 91 offline tests, lint, typecheck and production build successfully. The preceding checkpoint's live-model, physical-device and preference-UI limitations still apply. Git promotion does not establish production deployment health; no live integration tests were added to this publishing step. Earlier entries below describe the state at their original timestamps.
+
+---
+
+## Latest checkpoint: intelligence engine V2 branch
+
+**Agent** Codex. **Timestamp** 2026-11-13T16:44:16+05:30 (Asia/Kolkata).
+
+The current working branch is `codex/intelligence-engine-v2`, created from clean `main` at `5d4101c`. Main was not modified or deployed. The upgrade changes are uncommitted. Earlier handoff entries below remain historical records.
+
+Implemented and verified offline: fail-closed interpret route on missing/failed storage; preservation of pending offer/quote confirmation through explanations and repetition; distinct repeat and rewrite actions; bounded structured decision memory and derived workflow context; task-local rejected recommendation memory; explicit-consent saved preference API with update/clear. Existing voice, marketplace adapters and checkout services are unchanged.
+
+Changed files: `src/app/api/agent/interpret/route.ts` (storage failure); `src/app/api/commerce/route.ts`, `src/lib/commerce/session.ts`, new `src/lib/dialogue/preferences.ts` (saved preferences); `src/lib/dialogue/actions.ts`, `controller.ts`, `state.ts`, new `memory.ts` and `rewrite.ts` (actions, preservation, history, workflow, generation); `src/lib/integrations/food-intent.ts`, `gemini.ts` (typed model context and action guidance); `src/lib/marketplace/http.ts` (retry message); `tests/dialogue.test.ts`, `tests/commerce.test.ts`, new `tests/intelligence-route.test.ts` and `tests/intelligence.live.mjs`; `docs/INTELLIGENCE_ENGINE_V2.md`, this handoff and `PRODUCT_SPEC.md`.
+
+Verification: 91 offline tests passed, including existing 30-turn regression, provider quotes, expiry, price changes, checkout idempotency and mocked voice transport. Lint, typecheck, production build passed. Local development server started at `http://127.0.0.1:3000`, workspace HTTP 200. No paid API, physical microphone, remote PostgreSQL or deployment tests were run in this shift. No new dependencies or migrations.
+
+Remaining: live rewrite quality and semantic equivalence are unverified; numeric/name checks alone cannot certify factual meaning. The preferences API has no new Profile form. Decision history is structured compaction, not generated narrative summarization. The existing second-call informational safety fallback remains. Complete live multilingual and physical-phone regression before considering a merge. See `docs/INTELLIGENCE_ENGINE_V2.md` for architecture, test scope and exact next steps. Do not treat the full V2 brief as production-certified.
+
+---
+
 **Workspace** `/Users/khajaghousekhan/Desktop/Jugaad_ONE`  
 **Outgoing agent** OpenAI Codex  
 **Incoming agent** Google Antigravity  

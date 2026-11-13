@@ -19,10 +19,12 @@ import { paymentHref } from "../payment";
 import { transactionSpeech } from "../voice/transaction-speech";
 import { confirmationAnswer } from "./confirmation";
 import { directAction } from "./actions";
+import { rewriteResponse, type RewriteInput } from "./rewrite";
+import { changedFields, rememberDecision, workflow } from "./memory";
 import { actDomain, canDiscover, isInformationalQuestion, taskDomain, type SearchFailure, type TaskTransition } from "./routing";
 import { canonicalDish, canonicalIntent, sameIntent, type Dialogue, type Task } from "./state";
 
-type Services = { signal: AbortSignal; owner: string; persisted: boolean; requestId: string; interpret: (input: ReasoningInput, signal: AbortSignal) => Promise<{ model: string; plan: Interpretation; source?: "gemini_plan" | "gemini_reply" }>; search?: typeof runFoodTurn };
+type Services = { signal: AbortSignal; owner: string; persisted: boolean; requestId: string; interpret: (input: ReasoningInput, signal: AbortSignal) => Promise<{ model: string; plan: Interpretation; source?: "gemini_plan" | "gemini_reply" }>; search?: typeof runFoodTurn; rewrite?: (input: RewriteInput, signal: AbortSignal) => Promise<string> };
 type Reference = Interpretation["reference"];
 
 function facts(task?: Task) {
@@ -274,6 +276,10 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
     await services.interpret({ ...input, voiceLanguage: language, current, recentRequests: dialogue.recentTurns ?? input.recentRequests,
       context: { topic: dialogue.topic, lastReply: dialogue.last?.text, clarification: dialogue.clarification, taskDomain: task?.domain ?? (task ? taskDomain(current) : undefined), offers: facts(task).slice(0, 3).map(({ id, seller, name, provider, total, eta, rating }) => ({ id, seller, name, provider, total, eta, rating })),
         selectedOfferId: task?.selectedId, recommendation: dialogue.recommendation, history: dialogue.history,
+        workflow: workflow(session), pending, awaitingApproval: dialogue.awaitingApproval, decisions: dialogue.decisions,
+        preferences: session.profile?.preferences,
+        rejectedOfferIds: dialogue.rejectedOfferIds,
+        previousTasks: dialogue.previous.slice(0, 3).map(({ id, turn }) => ({ id, constraints: turn.constraints })),
         transactionStage: providerStage ?? (session.quote ? session.quote.approvedAt ? "approved" : "quoted" : undefined) },
     }, services.signal).catch((error: unknown) => {
       if (!(asksForCurrentDeals || asksForBudgetSurprise) || !(error instanceof MarketplaceError) || error.code !== "GEMINI_INVALID_RESPONSE") throw error;
@@ -315,17 +321,19 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
   let failure: SearchFailure | undefined;
   const tools = new Set<string>();
   let searchAttempted = false;
-  const languageAction = action === "change_language" || action === "rephrase" || action === "repeat";
+  const languageAction = action === "change_language" || action === "translate" || action === "rephrase" || action === "repeat";
   resultLanguage = input.voiceLanguage && !languageAction ? input.voiceLanguage : plan.language ?? language;
   const executionStart = performance.now();
   let providerCalls = 0;
   const timings = { catalog: 0, quotes: 0 };
   let state = session;
   let awaitingApproval = dialogue.awaitingApproval;
-  let confirmation: Dialogue["confirmation"] = action === "repeat" ? pending : undefined;
+  const preservesConfirmation = ["repeat", "repeat_price", "rephrase", "simplify", "elaborate", "translate", "explain", "compare", "summarize", "answer", "advice", "help", "greeting", "change_language", "ask_reviews", "suggest_complement"].includes(action);
+  let confirmation: Dialogue["confirmation"] = preservesConfirmation ? pending : undefined;
   let previous = dialogue.previous;
   let game = dialogue.game;
   let recommendation = dialogue.recommendation;
+  let rejectedOfferIds = dialogue.rejectedOfferIds ?? [];
   const asTurn = (reply: string, status: FoodTurn["status"] = "results"): FoodTurn => ({
     ...(task?.turn ?? { constraints: current, intent: plan.intent }),
     model, status, reply, replyLanguage: resultLanguage, keepSelection: true, speechTicket: undefined, providerTransaction: undefined, paymentPath: undefined,
@@ -337,7 +345,18 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
   const historical = task?.turn.sandbox?.offers ?? state.offers;
   const rememberOffer = () => { if (task) task = { ...task, selectedId: relevant?.id }; };
   const quote = state.quote;
-  if (action === "repeat" || action === "rephrase") {
+  if (["rephrase", "simplify", "elaborate", "translate"].includes(action)) {
+    const last = dialogue.last;
+    if (!last) turn = asTurn(help[resultLanguage], "clarification");
+    else {
+      tools.add("rewrite_response");
+      enforceRateLimit("gemini-rewrite", 12);
+      const mode = action === "translate" || action === "rephrase" && last.language !== resultLanguage ? "translate" : action === "elaborate" ? "elaborate" : "simplify";
+      const text = await (services.rewrite ?? rewriteResponse)({ mode, text: last.text, language: resultLanguage,
+        names: facts(task).flatMap(({ name, seller, provider, id }) => [name, seller, provider, id]) }, services.signal);
+      turn = asTurn(text);
+    }
+  } else if (action === "repeat") {
     tools.add("saved_reply");
     const last = dialogue.last;
     if (action === "repeat" && last && (!plan.language || plan.language === last.language)) {
@@ -346,7 +365,6 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
       if (last.ticket) { try { readSpeechTicket(last.ticket); ticket = last.ticket; } catch { /* Re-sign saved text after expiry. */ } }
       turn = { ...asTurn(last.text), speechTicket: ticket ?? issueSpeechTicket(last.text, last.language) };
     } else if (plan.answer && !relevant) turn = asTurn(plan.answer);
-    else if (action === "rephrase" && last?.language === resultLanguage) turn = asTurn(last.text);
     else if (relevant) turn = asTurn(priceLine(relevant, resultLanguage));
     else turn = asTurn(plan.answer ?? last?.text ?? help[resultLanguage]);
   } else if (action === "change_language") {
@@ -514,7 +532,7 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
     const rows = facts(task);
     if (action === "recommend") {
       const criterion = plan.criterion ?? (current.priority === "fastest" ? "speed" : current.qualityPriority ? "rating" : "price");
-      const best = [...rows].sort((a, b) => (criterion === "speed" ? a.eta - b.eta : criterion === "rating" ? b.rating - a.rating : 0) || a.total - b.total)[0];
+      const best = rows.filter(({ id }) => !rejectedOfferIds.includes(id)).sort((a, b) => (criterion === "speed" ? a.eta - b.eta : criterion === "rating" ? b.rating - a.rating : 0) || a.total - b.total)[0];
       if (best) {
         recommendation = { id: best.id, criterion };
         const basis = {
@@ -619,6 +637,8 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
       }[resultLanguage];
       turn = asTurn([discount ? applied : "", commerceSpeech(resultLanguage, state.quote)].filter(Boolean).join(" "), "selected");
     } else if (action === "reject" && pendingOffer) {
+      rejectedOfferIds = [...new Set([...rejectedOfferIds, pendingOffer.id])].slice(-12);
+      recommendation = undefined;
       turn = asTurn({ "en-IN": "I’ll keep the other options open.", "hi-IN": "बाकी विकल्प खुले हैं।", "hi-en": "Baaki options khule hain.", "te-IN": "మిగతా ఎంపికలు ఉన్నాయి." }[resultLanguage]);
     } else if (action === "select" && pendingOffer && answer === "yes" && task && !offersStillValid(task)) {
       turn = asTurn({ "en-IN": "Those offers have expired. Ask me to check fresh prices.", "hi-IN": "ऑफ़र की अवधि खत्म हो गई है। नई कीमतें पूछें।", "hi-en": "Offers expire ho gaye. Fresh prices check karwa sakte hain.", "te-IN": "ఆఫర్ల గడువు ముగిసింది. కొత్త ధరలు అడగండి." }[resultLanguage], "clarification");
@@ -833,7 +853,6 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
     }
   }
   if (awaitingApproval && awaitingApproval !== (state.quote?.id ?? state.providerQuoteId)) awaitingApproval = undefined;
-  if (["answer", "advice", "help", "greeting", "clarification_answer", "explain", "compare", "clarify", "stop_speech", "pause"].includes(action)) awaitingApproval = undefined;
   const responseView = tools.has("prepare_quote") || tools.has("verify_approval") || (action === "prepare" && state.quote) ? "checkout" :
     canDiscover({ ...plan, action }) || ["select", "redisplay", "compare", "summarize", "recommend", "back"].includes(action) ? "comparison" : "conversation";
   const result: FoodTurn = { ...turn, replyLanguage: resultLanguage, dialogueAction: action, domain, transition, searchFailure: failure, responseView, taskId: task?.id,
@@ -841,6 +860,9 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
     speechTicket: turn.voiceControl ? undefined : turn.speechTicket ?? issueSpeechTicket(turn.reply, resultLanguage) };
   const last = action === "stop" ? undefined : action === "repeat" || result.voiceControl ? dialogue.last : { text: result.reply, language: resultLanguage, ticket: result.speechTicket };
   result.trace = { turnId: services.requestId, reasoning: interpreted.source ?? "gemini_plan", tools: [...tools], searchAttempted, speechAvailable: Boolean(result.speechTicket), totalMs: Math.round(performance.now() - started) };
+  result.trace.workflowBefore = workflow(session);
+  result.trace.workflowAfter = workflow({ ...state, dialogue: { ...dialogue, task, confirmation, awaitingApproval, clarification: turn.status === "clarification" ? turn.reply : undefined } });
+  result.trace.changedFields = changedFields(current, state.current ?? {});
   const offerReply = transition === "end" ? undefined : result.keepSelection ? dialogue.offerReply : { text: result.reply, language: resultLanguage };
   if (process.env.NODE_ENV === "development" && process.env.JUGAAD_DEBUG_DIALOGUE === "1") {
     console.debug("jugaad_dialogue", { turnId: services.requestId, hadTask: Boolean(session.dialogue?.task),
@@ -848,6 +870,8 @@ export async function orchestrate(input: InterpretationInput, session: Session, 
       action, transition, tools: [...tools], nextPendingType: confirmation?.type, hasTask: Boolean(task) });
   }
   return { result, state: { ...state, dialogue: { task, previous, last, offerReply, awaitingApproval, confirmation, lastLanguage: resultLanguage,
+    decisions: transition === "end" ? [] : rememberDecision(dialogue.decisions, { taskId: task?.id, action, transition, changedFields: changedFields(current, state.current ?? {}) }),
+    rejectedOfferIds: ["switch", "end", "resume"].includes(transition) ? [] : rejectedOfferIds,
     game: transition === "end" || task ? undefined : game,
     recommendation: transition !== "switch" && facts(task).some(({ id }) => id === recommendation?.id) ? recommendation : undefined,
     history: transition === "end" ? [] : [...(transition === "switch" ? [] : dialogue.history ?? []),

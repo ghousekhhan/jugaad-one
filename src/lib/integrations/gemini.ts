@@ -10,6 +10,8 @@ import { interpretationSchema, type Interpretation, type ReasoningInput } from "
 
 const defaultModel = "gemini-3.5-flash-lite";
 const toolName = "decide_conversation_turn";
+const responseActions = "Use simplify for a simpler version of the previous response, elaborate for more detail, translate for translation into an explicit supported language, and repeat for exact repetition. Rephrase is a legacy alias for simplify or translation. Use explain for recommendation reasons. These actions never search. Use dialogue.pending and awaitingApproval as context only, never as authorization. PreviousTasks and decisions are bounded memory; use back to resume a stored task. Never infer a new purchase from an unrelated question.";
+const preferenceInstruction = "Saved preferences are user-approved background for suggestions only. Ask before turning a typical budget or preference into a new hard search constraint. Current explicit requirements always win. Temporary messages never save permanent preferences. RejectedOfferIds are options declined in this task; do not recommend them again unless explicitly reconsidered.";
 const { $schema: _schemaVersion, ...parametersJsonSchema } = z.toJSONSchema(interpretationSchema, {
   target: "draft-7", io: "input",
   override({ jsonSchema }) {
@@ -86,7 +88,7 @@ export async function interpretFoodRequest(input: ReasoningInput, signal: AbortS
       model,
       contents: JSON.stringify({ request: input.text, current: input.current, recentRequests: input.recentRequests, locationSelected: Boolean(input.location), language: input.voiceLanguage, dialogue: input.context }),
       config: {
-        systemInstruction: `${systemInstruction}\nUse English catalog names for cities, neighborhoods and dishes even if the transcript uses another script (e.g. Hyderabad, Banjara Hills, Biryani, Paneer Makhani, Masala Dosa, Shawarma). If the user asks an informational question such as 'what is biryani' or asks what you can do, return a direct JSON answer without invoking decide_conversation_turn.`,
+        systemInstruction: `${systemInstruction}\n${responseActions}\n${preferenceInstruction}\nUse English catalog names for cities, neighborhoods and dishes even if the transcript uses another script (e.g. Hyderabad, Banjara Hills, Biryani, Paneer Makhani, Masala Dosa, Shawarma). If the user asks an informational question such as 'what is biryani' or asks what you can do, return a direct JSON answer without invoking decide_conversation_turn.`,
         maxOutputTokens: 1024, abortSignal,
         tools: [{ functionDeclarations: [{ name: toolName, description: "Return the structured intent, permitted action and constraint patch for this turn.", parametersJsonSchema }] }],
         toolConfig: { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } },

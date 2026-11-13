@@ -25,6 +25,47 @@ const paraphrases = [
   ["हैदराबादी चिकन बिरयानी दिखाओ।", "हैदराबादी चिकन बिरयानी"],
 ] as const;
 
+test("recommendation survives explanation and repetition, then yes selects without payment", async () => {
+  const app = harness();
+  await app.turn("Find chicken biryani", { action: "search", intent: "food_order", patch: { dish: "Chicken Biryani" } });
+  await app.turn("Which one is best?", { action: "recommend", intent: "other", criterion: "price", patch: {} });
+  const pending = app.session().dialogue?.confirmation;
+  await app.turn("Why that one?");
+  assert.deepEqual(app.session().dialogue?.confirmation, pending);
+  const previous = app.session().dialogue?.last?.text;
+  assert.equal((await app.turn("Repeat what you just said")).reply, previous);
+  assert.deepEqual(app.session().dialogue?.confirmation, pending);
+  const selected = await app.turn("Yes", undefined, true);
+  assert.equal(selected.selectedOfferId, fixtureOffers[0].quote.id);
+  assert.deepEqual(app.session().orders, []);
+  assert.equal(app.stats().searchCalls, 1);
+});
+
+test("simplification uses generation but exact repetition does not", async () => {
+  const app = harness();
+  const initial = await app.turn("Explain gravity", { action: "answer", intent: "other", answer: "Objects attract one another.", patch: {} });
+  const simple = await app.turn("Say it more simply");
+  assert.notEqual(simple.reply, initial.reply);
+  assert.deepEqual(simple.trace?.tools, ["rewrite_response"]);
+  const repeated = await app.turn("Repeat what you just said");
+  assert.equal(repeated.reply, simple.reply);
+  assert.deepEqual(repeated.trace?.tools, ["saved_reply"]);
+  assert.equal(app.stats().searchCalls, 0);
+});
+
+test("declined recommendations are remembered within the task", async () => {
+  const app = harness();
+  await app.turn("Find chicken biryani", { action: "search", intent: "food_order", patch: { dish: "Chicken Biryani" } });
+  const plan: Interpretation = { action: "recommend", intent: "other", criterion: "price", patch: {} };
+  await app.turn("Which one?", plan);
+  await app.turn("No", undefined, true);
+  assert.deepEqual(app.session().dialogue?.rejectedOfferIds, [fixtureOffers[0].quote.id]);
+  await app.turn("Which one?", plan);
+  assert.equal(app.session().dialogue?.recommendation?.id, fixtureOffers[1].quote.id);
+  await app.turn("Cancel task");
+  assert.deepEqual(app.session().dialogue?.rejectedOfferIds, []);
+});
+
 function harness(firstSearchFailure = false, offers = fixtureOffers) {
   let state = fresh();
   let modelCalls = 0;
@@ -34,6 +75,7 @@ function harness(firstSearchFailure = false, offers = fixtureOffers) {
     const result = await orchestrate({ text, current: {}, location, recentRequests: [] }, state, {
       signal: new AbortController().signal, owner: "fixture", requestId: id, persisted,
       interpret: async (input) => { reasoning = input; modelCalls++; assert.ok(planned, `Unexpected model call for ${text}`); return { model: "fixture", plan: planned }; },
+      rewrite: async ({ text, language }) => language === "hi-IN" || language === "hi-en" ? text.replaceAll("rupees and", "रुपये").replaceAll("paise", "पैसे") : `In simpler words: ${text}`,
       search: async (input, model) => {
         searchCalls++;
         if (firstSearchFailure && searchCalls === 1) return { model, intent: "food_order", status: "provider_error", reply: "The provider did not respond.", constraints: input.current };

@@ -5,6 +5,8 @@
 **Design System:** Quiet Intelligence (approved three-tab package)  
 **Core Stack:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, Google Gemini GenAI SDK, Gnani Vachana (Prisma STT + Timbre TTS), SQLite / PostgreSQL
 
+**V2 branch checkpoint (2026-11-13):** `codex/intelligence-engine-v2` adds safe storage failure handling, pending-confirmation preservation, distinct repeat/simplify/elaborate/translate actions, bounded decision history, rejected recommendation memory and an explicit-consent preference API. These are local branch changes, not deployed behavior. See `docs/INTELLIGENCE_ENGINE_V2.md` for verified scope and outstanding live acceptance checks. No visual redesign or provider adapter replacement is part of this branch.
+
 ---
 
 ## 1. Product Vision & Tagline

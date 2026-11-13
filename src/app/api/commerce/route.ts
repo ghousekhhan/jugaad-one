@@ -10,6 +10,7 @@ import { MarketplaceError } from "@/lib/marketplace/provider";
 import { issueSpeechTicket } from "@/lib/voice/speech-ticket";
 import { timbreModel, voiceCatalog, type VoicePreference } from "@/lib/voice/catalog";
 import { voiceLocale } from "@/lib/voice/types";
+import { preferenceActionSchema } from "@/lib/dialogue/preferences";
 
 const profileSchema = z.object({
   name: z.string().trim().min(1).max(40), language: voiceLocale, region: regionSchema.optional(), location: locationSchema.optional(), locality: z.string().trim().min(1).max(100).optional(),
@@ -40,6 +41,14 @@ export async function POST(request: NextRequest) {
     enforceRateLimit("commerce-actions", 32);
     const { owner, issued } = commerceSession(request);
     const body = await readJson(request);
+    const preferences = preferenceActionSchema.safeParse(body);
+    if (preferences.success) {
+      const next = await updateSession(owner, (state) => {
+        if (!state.profile) throw new MarketplaceError("INVALID_MARKETPLACE_INPUT", 400);
+        return { ...state, profile: { ...state.profile, preferences: preferences.data.preferences ?? undefined } };
+      });
+      return sessionResponse(request, issued, { profile: next.profile });
+    }
     const voice = voiceAction.safeParse(body);
     if (voice.success) {
       const { language, voice: id } = voice.data;
@@ -57,11 +66,12 @@ export async function POST(request: NextRequest) {
         const changed = JSON.stringify(state.profile?.location) !== JSON.stringify(profile.data.profile.location) ||
           state.profile?.region !== profile.data.profile.region;
         const voicePreference = state.voicePreference?.language === profile.data.profile.language ? state.voicePreference : undefined;
-        if (!changed) return { ...state, profile: profile.data.profile, voicePreference };
+        const savedProfile = { ...profile.data.profile, preferences: state.profile?.preferences };
+        if (!changed) return { ...state, profile: savedProfile, voicePreference };
         const dialogue = state.dialogue;
         const task = dialogue?.task;
         const current = state.current ? { ...state.current, city: undefined, neighborhood: undefined } : undefined;
-        return { ...state, profile: profile.data.profile, voicePreference, searchId: undefined, lastTurn: undefined, current,
+        return { ...state, profile: savedProfile, voicePreference, searchId: undefined, lastTurn: undefined, current,
           offers: [], quote: undefined, providerQuoteId: undefined, dialogue: dialogue && { ...dialogue, awaitingApproval: undefined, offerReply: undefined,
             task: task ? { id: task.id, turn: { ...task.turn, constraints: current ?? {}, comparison: undefined, sandbox: undefined, selectedQuoteId: undefined } } : undefined } };
       });

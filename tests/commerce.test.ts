@@ -128,9 +128,7 @@ test("dialogue selects a stored non-food offer, approves its exact quote and ret
   assert.equal(quote?.offer.listing.id, second.listing.id);
   assert.ok(quote && !quote.approvedAt);
   await say("Why is the second one more expensive?");
-  assert.equal((await say("Yes")).status, "clarification");
-  await say("Great, proceed");
-  const approved = await say("Yes, I approve that amount.");
+  const approved = await say("Yes");
   assert.ok(approved.sandbox?.quote?.approvedAt);
   const action = { action: "pay", quoteId: quote.id, code: demoCode } as const;
   const first = await bookCommerce(owner, action);

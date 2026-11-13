@@ -11,8 +11,9 @@ import type { VoiceLocale } from "../voice/types";
 import type { Dialogue } from "../dialogue/state";
 import type { FoodIntent } from "../integrations/food-intent";
 import type { FoodLocation } from "../marketplace/discovery-types";
+import type { Preferences } from "../dialogue/preferences";
 
-export type Profile = { name: string; language: VoiceLocale; region?: Region; location?: FoodLocation; locality?: string };
+export type Profile = { name: string; language: VoiceLocale; region?: Region; location?: FoodLocation; locality?: string; preferences?: Preferences };
 export type Session = SandboxState & { profile?: Profile; voicePreference?: VoicePreference; current?: FoodIntent; searchId?: string; seenTurns?: string[]; dialogue?: Dialogue; providerQuoteId?: string; lastTurn?: { id: string; result: import("../integrations/food-intent").FoodTurn }; expiresAt: number };
 const retentionSeconds = 30 * 24 * 60 * 60;
 

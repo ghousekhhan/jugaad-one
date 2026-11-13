@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { commerceSession, sessionResponse, updateSession, type Session } from "@/lib/commerce/session";
+import { commerceSession, sessionResponse, updateSession } from "@/lib/commerce/session";
 import { orchestrate } from "@/lib/dialogue/controller";
 import { interpretationInputSchema } from "@/lib/integrations/food-intent";
 import { interpretFoodRequest } from "@/lib/integrations/gemini";
-import { apiFailure, apiSuccess, assertSameOrigin, enforceRateLimit, readJson } from "@/lib/marketplace/http";
+import { apiFailure, assertSameOrigin, enforceRateLimit, readJson } from "@/lib/marketplace/http";
 import { MarketplaceError } from "@/lib/marketplace/provider";
 import { transactionStorageConfigured } from "@/lib/marketplace/transaction-store";
 
@@ -19,16 +19,14 @@ export async function POST(request: NextRequest) {
     const { owner, issued } = commerceSession(request);
     const requestId = turnId = input.turnId ?? randomUUID();
     const started = performance.now();
-    const stored = transactionStorageConfigured() ? await updateSession(owner, (session) => {
+    if (!transactionStorageConfigured()) throw new MarketplaceError("TRANSACTION_STORAGE_UNAVAILABLE", 503);
+    const stored = await updateSession(owner, (session) => {
       if (session.lastTurn?.id === requestId) return session;
       if (session.searchId === requestId || session.seenTurns?.includes(requestId)) throw new MarketplaceError("COMMERCE_CONFLICT", 409);
       return { ...session, searchId: requestId, seenTurns: [...(session.seenTurns ?? []), requestId].slice(-12) };
-    }).catch((error: unknown) => {
-      if (error instanceof MarketplaceError && error.code === "TRANSACTION_STORAGE_UNAVAILABLE") return undefined;
-      throw error;
-    }) : undefined;
+    });
     if (stored?.lastTurn?.id === requestId) return sessionResponse(request, issued, stored.lastTurn.result);
-    const session: Session = stored ?? { offers: [], orders: [], expiresAt: 0 };
+    const session = stored;
     const { result, state, timing } = await orchestrate(input, session, {
       signal: request.signal, owner, requestId, persisted: Boolean(stored),
       interpret: (turn, signal) => {
@@ -46,7 +44,7 @@ export async function POST(request: NextRequest) {
           providerQuoteId: state.providerQuoteId, lastTurn: { id: requestId, result } };
       });
     }
-    const response = stored ? sessionResponse(request, issued, result) : apiSuccess(result);
+    const response = sessionResponse(request, issued, result);
     response.headers.set("X-Dialogue-Action", result.dialogueAction ?? "search");
     response.headers.set("X-Dialogue-Domain", result.domain ?? "other");
     response.headers.set("X-Dialogue-Transition", result.transition ?? "none");

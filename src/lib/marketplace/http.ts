@@ -17,7 +17,7 @@ const messages: Record<string, string> = {
   PAYLOAD_TOO_LARGE: "The request is too large.",
   UNAUTHORIZED: "The marketplace agent key was rejected.",
   CHECKOUT_NOT_CONFIGURED: "Checkout is temporarily unavailable.",
-  TRANSACTION_STORAGE_UNAVAILABLE: "Transaction history is temporarily unavailable.",
+  TRANSACTION_STORAGE_UNAVAILABLE: "Your saved conversation and transaction history are temporarily unavailable. Please retry in a moment.",
   TRANSACTION_NOT_FOUND: "This transaction is unavailable in this browser.",
   APPROVAL_TOTAL_MISMATCH: "The total does not match the saved quote. Review the quote again.",
   INVALID_TRANSACTION_STATE: "Review and approve an active quote before continuing.",

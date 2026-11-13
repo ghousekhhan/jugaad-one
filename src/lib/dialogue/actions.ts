@@ -5,7 +5,7 @@ export const dialogueActionSchema = z.enum([
   "search", "choose_cheapest", "clarify", "new_task", "refine", "correct", "repeat", "repeat_price",
   "redisplay", "explain", "rephrase", "compare", "recommend", "select", "back", "answer", "help",
   "prepare", "approve", "cancel", "reject", "order_status", "stop", "stop_speech", "pause", "mute", "greeting", "advice", "pause_task", "end_task", "clarification_answer",
-  "change_language", "summarize", "suggest_complement", "customize_item", "ask_reviews",
+  "change_language", "summarize", "suggest_complement", "customize_item", "ask_reviews", "simplify", "elaborate", "translate",
 ]);
 export type DialogueAction = z.infer<typeof dialogueActionSchema>;
 export const offerReferenceSchema = z.enum(["first", "second", "third", "selected", "other", "cheapest", "fastest"]);
@@ -35,7 +35,10 @@ export function directAction(text: string): {
   if (/^(?:can you |please )?(?:repeat that|repeat what you (?:just )?said|repeat please|say that again|say again|pardon(?: me)?|kya bola|dobara bolo|फिर से बोलो|మళ్ళీ చెప్పు)$/iu.test(value)) return { action: "repeat" };
   if (/^(?:now )?(?:show (?:me )?(?:those|the|it|same)?\s*(?:options|offers)?\s*again|repeat the options|options phir se dikhao|wahi biryani dobara dikhao|वही बिरयानी दोबारा दिखाओ|ఆప్షన్లు మళ్ళీ చూపించు)$/iu.test(value)) return { action: "redisplay" };
   if (/^(?:go back|show (?:me )?the previous options|peeche jao|पीछे जाओ|వెనక్కి వెళ్ళు)$/iu.test(value)) return { action: "back" };
-  if (/^(?:i didn['’]t understand|say it more simply|explain that more simply|aasan bhasha mein batao)$/iu.test(value)) return { action: "rephrase" };
+  if (/^(?:i didn['’]t understand|say it more simply|explain that more simply|aasan bhasha mein batao)$/iu.test(value)) return { action: "simplify" };
+  if (/^(?:elaborate|tell me more|explain in more detail)$/iu.test(value)) return { action: "elaborate" };
+  const translation = value.match(/^(?:translate that|say that) in (English|Hindi|Telugu|Hinglish)$/iu)?.[1].toLowerCase();
+  if (translation) return { action: "translate", language: ({ english: "en-IN", hindi: "hi-IN", telugu: "te-IN", hinglish: "hi-en" } as const)[translation as "english"] };
 
   if (/^(?:speak telugu|talk in telugu|switch to telugu|telugu please|telugu mein bolo|telugulo matladu|తెలుగులో మాట్లాడు|తెలుగు మాట్లాడండి|మాట్లాడు తెలుగులో)$/iu.test(value)) {
     return { action: "change_language", language: "te-IN" };
